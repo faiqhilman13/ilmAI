@@ -87,3 +87,91 @@ Suggested safety checklist before deleting local data:
 4) Take a VPS backup dump:
    - `docker exec -i ilmuai-postgres pg_dump -U ilmuai_admin -d ilmuai > /root/ilmuai_backup.sql`
    - Download it to your Mac or store in cloud storage.
+
+---
+
+## noob ops guide (SSH + tmux + services)
+
+### SSH in / out
+
+- SSH into the VPS:
+  ```bash
+  ssh -i ~/.ssh/ilmuai_hetzner root@46.224.20.19
+  ```
+- Exit the SSH session (does not stop the server):
+  ```bash
+  exit
+  ```
+
+### tmux basics (backend runs inside tmux)
+
+- List tmux sessions:
+  ```bash
+  tmux ls
+  ```
+- Attach to the backend session:
+  ```bash
+  tmux attach -t ilmuai
+  ```
+- Detach (leave it running in background):
+  - Press `Ctrl+b` then `d`
+
+### Start / stop backend (uvicorn)
+
+Assumption: backend runs in tmux session `ilmuai` and listens on `127.0.0.1:8000`.
+
+- Start backend in tmux (creates session if missing):
+  ```bash
+  tmux new -d -s ilmuai 'bash -lc "cd /opt/ilmuai/backend && source .venv/bin/activate && uvicorn app.main:app --host 127.0.0.1 --port 8000"'
+  ```
+- Check backend health:
+  ```bash
+  curl -s http://127.0.0.1:8000/health
+  curl -s https://46.224.20.19.sslip.io/health
+  ```
+- Stop backend (kill tmux session):
+  ```bash
+  tmux kill-session -t ilmuai
+  ```
+- If you’re attached to tmux and want to stop uvicorn gracefully:
+  - Press `Ctrl+C` inside the tmux pane, then detach (`Ctrl+b`, `d`)
+
+### Caddy (HTTPS reverse proxy)
+
+- Caddy status:
+  ```bash
+  systemctl status caddy --no-pager
+  ```
+- Reload after editing `/etc/caddy/Caddyfile`:
+  ```bash
+  systemctl reload caddy
+  ```
+- View logs:
+  ```bash
+  journalctl -u caddy -n 100 --no-pager
+  ```
+
+### Docker (DB/Redis)
+
+- Show containers:
+  ```bash
+  cd /opt/ilmuai/docker
+  docker ps
+  ```
+- Start infra services:
+  ```bash
+  cd /opt/ilmuai/docker
+  docker compose up -d
+  ```
+- Stop infra services:
+  ```bash
+  cd /opt/ilmuai/docker
+  docker compose down
+  ```
+
+### Common “where is my config?”
+
+- Backend env file:
+  - `/opt/ilmuai/backend/.env`
+- Caddy config:
+  - `/etc/caddy/Caddyfile`
