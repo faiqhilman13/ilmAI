@@ -23,6 +23,8 @@ def create_llm_client(settings: Settings) -> BaseLLMClient:
     if settings.llm_provider == "openai":
         return OpenAIClient(
             api_key=settings.openai_api_key,
+            org_id=settings.openai_org_id,
+            project_id=settings.openai_project_id,
             chat_model=settings.openai_chat_model,
             embedding_model=settings.openai_embedding_model,
         )
@@ -31,6 +33,8 @@ def create_llm_client(settings: Settings) -> BaseLLMClient:
             api_key=settings.anthropic_api_key,
             model=settings.anthropic_model,
             openai_api_key=settings.openai_api_key,  # For embeddings
+            openai_org_id=settings.openai_org_id,
+            openai_project_id=settings.openai_project_id,
             embedding_model=settings.openai_embedding_model,
         )
     else:

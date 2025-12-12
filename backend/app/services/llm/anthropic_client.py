@@ -21,6 +21,8 @@ class AnthropicClient(BaseLLMClient):
         api_key: str,
         model: str = "claude-sonnet-4-20250514",
         openai_api_key: str = "",
+        openai_org_id: str = "",
+        openai_project_id: str = "",
         embedding_model: str = "text-embedding-3-small",
     ):
         """Initialize Anthropic client.
@@ -29,13 +31,23 @@ class AnthropicClient(BaseLLMClient):
             api_key: Anthropic API key
             model: Claude model name
             openai_api_key: OpenAI API key for embeddings (Claude doesn't have embeddings)
+            openai_org_id: Optional OpenAI organization id for embeddings
+            openai_project_id: Optional OpenAI project id for embeddings
             embedding_model: OpenAI embedding model
         """
         self.client = AsyncAnthropic(api_key=api_key)
         self.model = model
 
         # Use OpenAI for embeddings since Anthropic doesn't have embedding API
-        self.openai_client = AsyncOpenAI(api_key=openai_api_key) if openai_api_key else None
+        if openai_api_key:
+            client_kwargs = {"api_key": openai_api_key}
+            if openai_org_id:
+                client_kwargs["organization"] = openai_org_id
+            if openai_project_id:
+                client_kwargs["project"] = openai_project_id
+            self.openai_client = AsyncOpenAI(**client_kwargs)
+        else:
+            self.openai_client = None
         self.embedding_model = embedding_model
 
     @retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=1, max=10))

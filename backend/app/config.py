@@ -32,6 +32,9 @@ class Settings(BaseSettings):
 
     # OpenAI
     openai_api_key: str = ""
+    # Optional: force a specific OpenAI org/project when keys belong to multiple.
+    openai_org_id: str = ""
+    openai_project_id: str = ""
     openai_chat_model: str = "gpt-4o"
     openai_embedding_model: str = "text-embedding-3-small"
 

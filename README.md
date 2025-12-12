@@ -111,6 +111,9 @@ ilmuai/
 ```env
 LLM_PROVIDER=openai           # or 'anthropic'
 OPENAI_API_KEY=sk-...
+# Optional: set if your key belongs to multiple orgs/projects
+OPENAI_ORG_ID=org_...
+OPENAI_PROJECT_ID=proj_...
 ANTHROPIC_API_KEY=sk-ant-...  # Optional if using OpenAI
 DATABASE_URL=postgresql+asyncpg://postgres:postgres@localhost:5432/ilmuai
 REDIS_URL=redis://localhost:6379/0

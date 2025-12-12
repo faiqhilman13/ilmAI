@@ -19,6 +19,8 @@ class OpenAIClient(BaseLLMClient):
     def __init__(
         self,
         api_key: str,
+        org_id: str = "",
+        project_id: str = "",
         chat_model: str = "gpt-4o",
         embedding_model: str = "text-embedding-3-small",
     ):
@@ -26,10 +28,17 @@ class OpenAIClient(BaseLLMClient):
 
         Args:
             api_key: OpenAI API key
+            org_id: Optional OpenAI organization id
+            project_id: Optional OpenAI project id
             chat_model: Model for chat completions
             embedding_model: Model for embeddings
         """
-        self.client = AsyncOpenAI(api_key=api_key)
+        client_kwargs = {"api_key": api_key}
+        if org_id:
+            client_kwargs["organization"] = org_id
+        if project_id:
+            client_kwargs["project"] = project_id
+        self.client = AsyncOpenAI(**client_kwargs)
         self.chat_model = chat_model
         self.embedding_model = embedding_model
 
