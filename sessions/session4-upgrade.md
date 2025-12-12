@@ -5,19 +5,26 @@
   - Fused dense/sparse (and multi‑query) results with **Reciprocal Rank Fusion (RRF)**.
   - Added **LLM search planner** to generate up to `rag_num_rewrites` query rewrites (English/Malay/Arabic/transliteration) and optional structured filters.
   - Added **regex heuristics** for explicit references (e.g., `2:255`, “Hadith #20”, “Bukhari”) to short‑circuit planning when obvious.
+  - Added **explicit Quran range handling**:
+    - Normalizes Unicode dashes (e.g., `88:14‑16`) so ranges parse correctly.
+    - Forces all ayahs in a requested range into context and preserves them through reranking.
   - Implemented **source priors + balanced top‑k**:
     - Heuristic weights to nudge Quran/Hadith/Fiqh/Fatwa based on intent cues.
     - Ensures `rag_per_source_k` per source before filling remaining slots **only for Quran‑cue queries**.
   - Added **Quran context window expansion** (conditional on Quran cues): when a single‑ayah Quran chunk is retrieved, automatically include neighboring ayahs (±`rag_quran_context_window`) for richer context.
 
 - Added a two‑stage reranking step after retrieval.
-  - **Cross‑encoder reranker** (default `BAAI/bge-reranker-v2-m3`) reorders retrieved chunks by pairwise relevance.
+  - **Cross‑encoder reranker** (default `BAAI/bge-reranker-base`) reorders retrieved chunks by pairwise relevance.
   - **LLM‑judge reranker** reorders the top candidates again using GPT for final relevance ordering.
   - Final context uses the top `rag_rerank_top_k` reranked chunks.
 
 - Improved RAG debugging logs.
-  - Added colored boxed log sections for: user query, topic classification, retrieval plan/results, rerank stages, raw LLM response, and final answer + citations.
+  - Added colored boxed log sections for: user query, topic classification, retrieval plan/results, rerank stages, final context order, citations used, raw LLM response, and final answer.
   - Makes it easy to visually trace each pipeline stage in backend logs.
+
+- Fixed Quran citation metadata mapping.
+  - Uses `surah_name_ms/en` when `surah_name` is missing.
+  - Uses `ayah_number` for single‑ayah chunks so titles/snippets show correct ayah numbers.
 
 - Added configuration knobs for all retrieval upgrades:
   - `rag_use_hybrid`, `rag_dense_candidates`, `rag_sparse_candidates`, `rag_rrf_k`
@@ -35,6 +42,7 @@
 
 - `backend/app/services/rag/retriever.py`
 - `backend/app/services/rag/pipeline.py`
+- `backend/app/services/rag/citation.py`
 - `backend/app/services/rag/reranker.py`
 - `backend/app/services/rag/logging_utils.py`
 - `backend/app/config.py`

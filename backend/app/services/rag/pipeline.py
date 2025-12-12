@@ -115,8 +115,12 @@ class IslamicRAGPipeline:
             retrieval_lines.append("no chunks matched retrieval criteria")
         logger.info(format_box("RETRIEVAL", retrieval_lines, color="yellow"))
 
+        retrieved_before_rerank = list(chunks)
+        forced_quran_range = self._forced_quran_range_chunks(question, retrieved_before_rerank)
+
         # 2b. Rerank retrieved chunks (cross-encoder then LLM judge)
-        rerank_top_k = min(len(chunks), settings.rag_rerank_top_k or len(chunks))
+        base_rerank_k = settings.rag_rerank_top_k or len(chunks)
+        rerank_top_k = min(len(chunks), max(base_rerank_k, len(forced_quran_range)))
         if self.cross_reranker and rerank_top_k:
             chunks = await self.cross_reranker.rerank(question, chunks, rerank_top_k)
             logger.info(
@@ -124,7 +128,7 @@ class IslamicRAGPipeline:
                     "RERANK (CROSS-ENCODER)",
                     [f"reranked_top_k: {len(chunks)}"]
                     + [
-                        f"{i}. {c.source_type} score={c.score:.3f} {c.text_content.replace(chr(10),' ')[:120]}..."
+                        f"[{i}] {self._chunk_debug_label(c)} score={c.score:.3f} {c.text_content.replace(chr(10),' ')[:120]}..."
                         for i, c in enumerate(chunks[:5], 1)
                     ],
                     color="yellow",
@@ -140,12 +144,22 @@ class IslamicRAGPipeline:
                     "RERANK (LLM JUDGE)",
                     [f"reranked_top_k: {len(chunks)}"]
                     + [
-                        f"{i}. {c.source_type} {c.text_content.replace(chr(10),' ')[:120]}..."
+                        f"[{i}] {self._chunk_debug_label(c)} {c.text_content.replace(chr(10),' ')[:120]}..."
                         for i, c in enumerate(chunks[:5], 1)
                     ],
                     color="yellow",
                 )
             )
+
+        if forced_quran_range:
+            forced_ids = {c.id for c in forced_quran_range}
+            chunks = forced_quran_range + [c for c in chunks if c.id not in forced_ids]
+
+        context_lines: List[str] = [f"final_context_chunks: {len(chunks)}"]
+        for i, c in enumerate(chunks, 1):
+            preview = c.text_content.replace("\n", " ")[:160]
+            context_lines.append(f"[{i}] {self._chunk_debug_label(c)} {preview}...")
+        logger.info(format_box("CONTEXT (FINAL ORDER)", context_lines, color="yellow"))
 
         # 3. Handle case where no relevant chunks found
         if not chunks:
@@ -184,6 +198,14 @@ class IslamicRAGPipeline:
             available_chunks=chunks,
         )
         citation_indices = [c.index for c in citations]
+        if citation_indices:
+            cited_lines: List[str] = []
+            for idx in citation_indices:
+                if 1 <= idx <= len(chunks):
+                    ch = chunks[idx - 1]
+                    preview = ch.text_content.replace("\n", " ")[:160]
+                    cited_lines.append(f"[{idx}] {self._chunk_debug_label(ch)} {preview}...")
+            logger.info(format_box("CITATIONS USED", cited_lines, color="green"))
         logger.info(
             format_box(
                 "FINAL ANSWER",
@@ -252,7 +274,10 @@ class IslamicRAGPipeline:
             )
         logger.info(format_box("RETRIEVAL", retrieval_lines, color="yellow"))
 
-        rerank_top_k = min(len(chunks), settings.rag_rerank_top_k or len(chunks))
+        retrieved_before_rerank = list(chunks)
+        forced_quran_range = self._forced_quran_range_chunks(question, retrieved_before_rerank)
+        base_rerank_k = settings.rag_rerank_top_k or len(chunks)
+        rerank_top_k = min(len(chunks), max(base_rerank_k, len(forced_quran_range)))
         if self.cross_reranker and rerank_top_k:
             chunks = await self.cross_reranker.rerank(question, chunks, rerank_top_k)
             logger.info(format_box("RERANK (CROSS-ENCODER)", [f"reranked_top_k: {len(chunks)}"], color="yellow"))
@@ -261,6 +286,16 @@ class IslamicRAGPipeline:
         if self.llm_judge_reranker and rerank_top_k:
             chunks = await self.llm_judge_reranker.rerank(question, chunks, rerank_top_k)
             logger.info(format_box("RERANK (LLM JUDGE)", [f"reranked_top_k: {len(chunks)}"], color="yellow"))
+
+        if forced_quran_range:
+            forced_ids = {c.id for c in forced_quran_range}
+            chunks = forced_quran_range + [c for c in chunks if c.id not in forced_ids]
+
+        context_lines: List[str] = [f"final_context_chunks: {len(chunks)}"]
+        for i, c in enumerate(chunks, 1):
+            preview = c.text_content.replace("\n", " ")[:160]
+            context_lines.append(f"[{i}] {self._chunk_debug_label(c)} {preview}...")
+        logger.info(format_box("CONTEXT (FINAL ORDER)", context_lines, color="yellow"))
 
         # 2. Build prompts (non-structured for cleaner streaming)
         system_prompt = get_system_prompt(language, structured=False)
@@ -331,6 +366,68 @@ Please try:
 3. Consulting directly with a religious scholar for complex questions
 
 Is there another aspect I can help you with?"""
+
+    def _chunk_debug_label(self, chunk: RetrievedChunk) -> str:
+        meta = chunk.metadata or {}
+        st = chunk.source_type
+        if st == "fiqh":
+            topic = meta.get("topic") or meta.get("category") or "fiqh"
+            return f"fiqh:{topic}"
+        if st == "hadith":
+            collection = meta.get("collection") or "hadith"
+            num = meta.get("hadith_number") or ""
+            return f"hadith:{collection}#{num}".rstrip("#")
+        if st == "quran":
+            ref = meta.get("reference")
+            if not ref:
+                surah = meta.get("surah_number") or "?"
+                ayah = meta.get("ayah_number") or meta.get("ayah_start") or "?"
+                ref = f"{surah}:{ayah}"
+            return f"quran:{ref}"
+        if st == "fatwa":
+            authority = meta.get("issuing_authority") or meta.get("authority") or "fatwa"
+            num = meta.get("fatwa_number") or ""
+            return f"fatwa:{authority}{('#'+str(num)) if num else ''}"
+        return st
+
+    def _forced_quran_range_chunks(
+        self, question: str, candidates: List[RetrievedChunk]
+    ) -> List[RetrievedChunk]:
+        """If user asks for Surah:AyahStart-AyahEnd, keep all ayahs in range."""
+        import re
+
+        normalized = re.sub(r"[‐‑‒–—−﹣－]", "-", question.lower())
+        m = re.search(
+            r"\b(\d{1,3})\s*:\s*(\d{1,3})\s*-\s*(\d{1,3})\b",
+            normalized,
+        )
+        if not m:
+            return []
+        surah = int(m.group(1))
+        start = int(m.group(2))
+        end = int(m.group(3))
+        if end < start:
+            start, end = end, start
+
+        picked: List[RetrievedChunk] = []
+        for c in candidates:
+            if c.source_type != "quran":
+                continue
+            meta = c.metadata or {}
+            if int(meta.get("surah_number", -1) or -1) != surah:
+                continue
+            ayah = meta.get("ayah_number") or meta.get("ayah_start")
+            if ayah is None:
+                continue
+            try:
+                ayah_i = int(ayah)
+            except Exception:
+                continue
+            if start <= ayah_i <= end:
+                picked.append(c)
+
+        picked.sort(key=lambda c: int((c.metadata or {}).get("ayah_number") or (c.metadata or {}).get("ayah_start") or 0))
+        return picked
 
     async def _generate_with_citation_retry(
         self,

@@ -121,13 +121,26 @@ class CitationManager:
         metadata = chunk.metadata
 
         if chunk.source_type == "quran":
+            surah_number = metadata.get("surah_number", 0)
+            surah_name = (
+                metadata.get("surah_name")
+                or metadata.get("surah_name_ms")
+                or metadata.get("surah_name_en")
+                or "Unknown"
+            )
+            # Support both single-ayah and grouped chunk metadata shapes
+            ayah_number = metadata.get("ayah_number")
+            ayah_start = metadata.get("ayah_start") or ayah_number or 0
+            ayah_end = metadata.get("ayah_end")
+            if ayah_end is None and metadata.get("ayah_start") is not None:
+                ayah_end = ayah_start
             return QuranCitation(
                 index=index,
                 text_snippet=text_snippet,
-                surah_number=metadata.get("surah_number", 0),
-                surah_name=metadata.get("surah_name", "Unknown"),
-                ayah_start=metadata.get("ayah_start", 0),
-                ayah_end=metadata.get("ayah_end"),
+                surah_number=int(surah_number) if surah_number is not None else 0,
+                surah_name=str(surah_name),
+                ayah_start=int(ayah_start) if ayah_start is not None else 0,
+                ayah_end=int(ayah_end) if ayah_end is not None else None,
                 arabic_text=chunk.text_arabic,
                 translation=chunk.text_translation or chunk.text_content,
             )

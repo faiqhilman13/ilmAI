@@ -211,6 +211,15 @@ class KnowledgeRetriever:
                 fused_chunks, settings.rag_quran_context_window
             )
 
+        range_info = self._explicit_quran_range(query, effective_filters)
+        if range_info:
+            surah, start, end = range_info
+            nums = list(range(start, end + 1))
+            forced = await self._fetch_quran_ayahs(surah, nums)
+            forced_ids = {c.id for c in forced}
+            rest = [c for c in fused_chunks if c.id not in forced_ids]
+            fused_chunks = forced + rest
+
         mode = "hybrid" if settings.rag_use_hybrid else "dense"
         logger.info(
             f"Retrieved {len(fused_chunks)} chunks for query ({mode}; dense={total_dense}, sparse={total_sparse}, queries={len(planned_queries)})"
@@ -416,12 +425,16 @@ Rules:
 
     def _heuristic_filters(self, query: str) -> Dict[str, Any]:
         filters: Dict[str, Any] = {}
+        normalized_query = self._normalize_dashes(query)
         m = re.search(
-            r"\b(\d{1,3})\s*:\s*(\d{1,3})(?:\s*-\s*(\d{1,3}))?\b", query
+            r"\b(\d{1,3})\s*:\s*(\d{1,3})(?:\s*-\s*(\d{1,3}))?\b",
+            normalized_query,
         )
         if m:
             filters["surah_number"] = int(m.group(1))
             filters["ayah_number"] = int(m.group(2))
+            if m.group(3):
+                filters["ayah_end"] = int(m.group(3))
 
         collections = {
             "bukhari": ["bukhari", "bukharī", "البخاري"],
@@ -523,6 +536,34 @@ Rules:
             "القرآن",
         ]
         return any(c in ql for c in cues)
+
+    def _explicit_quran_range(
+        self, query: str, filters: Dict[str, Any]
+    ) -> Optional[tuple[int, int, int]]:
+        """Detect explicit Surah:AyahStart-AyahEnd ranges from query/filters."""
+        surah = filters.get("surah_number")
+        start = filters.get("ayah_number")
+        end = filters.get("ayah_end")
+        if surah and start and end and int(end) >= int(start):
+            return int(surah), int(start), int(end)
+
+        normalized_query = self._normalize_dashes(query)
+        m = re.search(
+            r"\b(\d{1,3})\s*:\s*(\d{1,3})\s*-\s*(\d{1,3})\b",
+            normalized_query,
+        )
+        if not m:
+            return None
+        s = int(m.group(1))
+        a1 = int(m.group(2))
+        a2 = int(m.group(3))
+        if a2 < a1:
+            a1, a2 = a2, a1
+        return s, a1, a2
+
+    def _normalize_dashes(self, text: str) -> str:
+        """Normalize various Unicode dash characters to a simple '-'."""
+        return re.sub(r"[‐‑‒–—−﹣－]", "-", text)
 
     def _try_parse_json(self, text_response: str) -> Optional[Dict[str, Any]]:
         text = text_response.strip()
