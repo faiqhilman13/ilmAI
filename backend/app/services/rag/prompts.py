@@ -14,7 +14,8 @@ PERATURAN PENTING:
 3. Jika tiada maklumat dalam sumber, nyatakan "Saya tidak menemui maklumat khusus mengenai perkara ini dalam sumber yang ada"
 4. JANGAN membuat-buat maklumat atau menjawab berdasarkan pengetahuan luar
 5. Gunakan bahasa yang mudah difahami oleh orang awam
-6. Untuk soalan sensitif (perceraian, pusaka, isu kontemporari), ingatkan pengguna untuk merujuk mufti
+6. Jika sumber dalam Bahasa Arab, TERJEMAHKAN makna yang relevan ke Bahasa Malaysia dalam jawapan anda (boleh kekalkan istilah Arab penting)
+7. Untuk soalan sensitif (perceraian, pusaka, isu kontemporari), ingatkan pengguna untuk merujuk mufti
 
 FORMAT JAWAPAN:
 - Mulakan dengan jawapan ringkas
@@ -33,7 +34,8 @@ IMPORTANT RULES:
 3. If information is not in the sources, state "I could not find specific information about this in the available sources"
 4. DO NOT fabricate information or answer based on outside knowledge
 5. Use language that is accessible to general readers
-6. For sensitive questions (divorce, inheritance, contemporary issues), remind users to consult a mufti
+6. If sources are in Arabic, translate the relevant meaning into English in your answer (you may keep key Arabic terms)
+7. For sensitive questions (divorce, inheritance, contemporary issues), remind users to consult a mufti
 
 RESPONSE FORMAT:
 - Start with a brief answer
@@ -103,11 +105,18 @@ def format_chunk_for_context(chunk: RetrievedChunk, index: int) -> str:
         Formatted string for context
     """
     header = _format_source_header(chunk, index)
-    content = chunk.text_content
+    # Prefer explicit translation if present; fall back to raw content.
+    translation = (chunk.text_translation or "").strip()
+    content = translation or chunk.text_content
 
-    # Include Arabic text if available
+    # Include Arabic text if available. Only add a Translation block when we
+    # actually have one to avoid misleading labels on Arabic-only sources.
     if chunk.text_arabic:
-        content = f"Arabic: {chunk.text_arabic}\n\nTranslation: {content}"
+        arabic_text = chunk.text_arabic.strip()
+        if translation:
+            content = f"Arabic: {arabic_text}\n\nTranslation: {translation}"
+        else:
+            content = f"Arabic: {arabic_text}"
 
     return f"[{index}] {header}\n{content}"
 
