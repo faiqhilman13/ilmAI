@@ -22,7 +22,7 @@ class KnowledgeSource(Base):
     source_type: Mapped[str] = mapped_column(String(50), nullable=False)
     name: Mapped[str] = mapped_column(String(255), nullable=False)
     description: Mapped[str | None] = mapped_column(Text)
-    metadata: Mapped[dict | None] = mapped_column(JSONB, default={})
+    source_metadata: Mapped[dict | None] = mapped_column(JSONB, default={})
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=datetime.utcnow
     )
@@ -47,7 +47,7 @@ class KnowledgeChunk(Base):
     text_arabic: Mapped[str | None] = mapped_column(Text)
     text_translation: Mapped[str | None] = mapped_column(Text)
     embedding = mapped_column(Vector(1536))  # OpenAI text-embedding-3-small dimension
-    metadata: Mapped[dict] = mapped_column(JSONB, nullable=False, default={})
+    chunk_metadata: Mapped[dict] = mapped_column(JSONB, nullable=False, default={})
     chunk_index: Mapped[int | None] = mapped_column(Integer)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=datetime.utcnow

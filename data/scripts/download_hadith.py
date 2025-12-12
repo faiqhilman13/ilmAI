@@ -24,37 +24,45 @@ from typing import Optional
 # Output directory
 OUTPUT_DIR = Path(__file__).parent.parent / "raw" / "hadith"
 
-# GitHub repositories with hadith datasets
+# Real authenticated hadith datasets
+# Primary: AhmedBaset/hadith-json - 50,884 hadiths from 17 books
+# Backup: HuggingFace meeAtif/hadith_datasets
 GITHUB_SOURCES = {
     "bukhari": {
-        "url": "https://raw.githubusercontent.com/A7med3bdworeth/hadith-json/main/db/by_book/bukhari.json",
+        "url": "https://raw.githubusercontent.com/AhmedBaset/hadith-json/main/by_book/bukhari.json",
+        "backup_url": "https://huggingface.co/datasets/meeAtif/hadith_datasets/resolve/main/Sahih%20al-Bukhari.json",
         "name": "Sahih al-Bukhari",
-        "description": "Collection by Imam Bukhari - most authentic",
+        "description": "Collection by Imam Bukhari - most authentic (7,563 hadiths)",
     },
     "muslim": {
-        "url": "https://raw.githubusercontent.com/A7med3bdworeth/hadith-json/main/db/by_book/muslim.json",
+        "url": "https://raw.githubusercontent.com/AhmedBaset/hadith-json/main/by_book/muslim.json",
+        "backup_url": "https://huggingface.co/datasets/meeAtif/hadith_datasets/resolve/main/Sahih%20Muslim.json",
         "name": "Sahih Muslim",
-        "description": "Collection by Imam Muslim - second most authentic",
+        "description": "Collection by Imam Muslim - second most authentic (7,563 hadiths)",
     },
     "abudawud": {
-        "url": "https://raw.githubusercontent.com/A7med3bdworeth/hadith-json/main/db/by_book/abudawud.json",
+        "url": "https://raw.githubusercontent.com/AhmedBaset/hadith-json/main/by_book/abudawud.json",
+        "backup_url": "https://huggingface.co/datasets/meeAtif/hadith_datasets/resolve/main/Sunan%20Abu%20Dawud.json",
         "name": "Sunan Abu Dawud",
-        "description": "Collection by Imam Abu Dawud",
+        "description": "Collection by Imam Abu Dawud (5,274 hadiths)",
     },
     "tirmidhi": {
-        "url": "https://raw.githubusercontent.com/A7med3bdworeth/hadith-json/main/db/by_book/tirmidhi.json",
+        "url": "https://raw.githubusercontent.com/AhmedBaset/hadith-json/main/by_book/tirmidhi.json",
+        "backup_url": "https://huggingface.co/datasets/meeAtif/hadith_datasets/resolve/main/Jami%20at-Tirmidhi.json",
         "name": "Jami at-Tirmidhi",
-        "description": "Collection by Imam Tirmidhi",
+        "description": "Collection by Imam Tirmidhi (3,956 hadiths)",
     },
     "nasai": {
-        "url": "https://raw.githubusercontent.com/A7med3bdworeth/hadith-json/main/db/by_book/nasai.json",
+        "url": "https://raw.githubusercontent.com/AhmedBaset/hadith-json/main/by_book/nasai.json",
+        "backup_url": "https://huggingface.co/datasets/meeAtif/hadith_datasets/resolve/main/Sunan%20an-Nasai.json",
         "name": "Sunan an-Nasa'i",
-        "description": "Collection by Imam Nasa'i",
+        "description": "Collection by Imam Nasa'i (5,758 hadiths)",
     },
     "ibnmajah": {
-        "url": "https://raw.githubusercontent.com/A7med3bdworeth/hadith-json/main/db/by_book/ibnmajah.json",
+        "url": "https://raw.githubusercontent.com/AhmedBaset/hadith-json/main/by_book/ibnmajah.json",
+        "backup_url": "https://huggingface.co/datasets/meeAtif/hadith_datasets/resolve/main/Sunan%20Ibn%20Majah.json",
         "name": "Sunan Ibn Majah",
-        "description": "Collection by Imam Ibn Majah",
+        "description": "Collection by Imam Ibn Majah (4,341 hadiths)",
     },
 }
 
@@ -79,9 +87,9 @@ def download_file(url: str, output_path: Path, description: str) -> bool:
 
 
 def download_from_github():
-    """Download hadith collections from GitHub repositories."""
+    """Download hadith collections from GitHub repositories with backup URLs."""
     print("=" * 60)
-    print("Downloading Hadith Collections from GitHub")
+    print("Downloading Hadith Collections from Real Sources")
     print("=" * 60)
     print()
 
@@ -96,8 +104,14 @@ def download_from_github():
             success_count += 1
             continue
 
+        # Try primary URL first
         if download_file(source["url"], output_path, source["name"]):
             success_count += 1
+        elif "backup_url" in source:
+            # Try backup URL if primary fails
+            print(f"  Trying backup source...")
+            if download_file(source["backup_url"], output_path, f"{source['name']} (backup)"):
+                success_count += 1
         print()
 
     print(f"Downloaded {success_count}/{len(GITHUB_SOURCES)} collections")

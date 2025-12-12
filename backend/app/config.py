@@ -42,7 +42,7 @@ class Settings(BaseSettings):
     # RAG Configuration
     rag_top_k: int = 10
     rag_rerank_top_k: int = 5
-    rag_score_threshold: float = 0.3
+    rag_score_threshold: float = 0.2
     chunk_size: int = 500
     chunk_overlap: int = 100
 
@@ -63,7 +63,6 @@ class Settings(BaseSettings):
         return [origin.strip() for origin in self.cors_origins.split(",")]
 
 
-@lru_cache(maxsize=1)
 def get_settings() -> Settings:
     """Get cached settings instance."""
     return Settings()

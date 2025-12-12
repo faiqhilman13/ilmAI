@@ -77,20 +77,21 @@ class KnowledgeRetriever:
         # Build SQL query with vector similarity
         # Using cosine distance (1 - cosine_similarity) so lower is better
         # Convert to similarity score: 1 - distance
-        sql = """
+        # Note: We embed the vector literal directly since asyncpg doesn't support ::vector casting with params
+        sql = f"""
             SELECT
                 id,
                 source_type,
                 text_content,
                 text_arabic,
                 text_translation,
-                metadata,
-                1 - (embedding <=> :embedding::vector) as similarity
+                chunk_metadata as metadata,
+                1 - (embedding <=> '{embedding_literal}'::vector) as similarity
             FROM knowledge_chunks
             WHERE embedding IS NOT NULL
         """
 
-        params = {"embedding": embedding_literal, "top_k": top_k}
+        params = {}
 
         # Add source filter if provided
         if source_filter:
@@ -98,16 +99,20 @@ class KnowledgeRetriever:
             params["source_types"] = source_filter
 
         # Add similarity threshold and ordering
-        sql += """
-            AND 1 - (embedding <=> :embedding::vector) >= :threshold
-            ORDER BY embedding <=> :embedding::vector
+        sql += f"""
+            AND 1 - (embedding <=> '{embedding_literal}'::vector) >= :threshold
+            ORDER BY embedding <=> '{embedding_literal}'::vector
             LIMIT :top_k
         """
         params["threshold"] = score_threshold
+        params["top_k"] = top_k
 
         # Execute query
+        logger.debug(f"Executing retrieval query with threshold={score_threshold}, top_k={top_k}")
         result = await self.db.execute(text(sql), params)
         rows = result.fetchall()
+
+        logger.info(f"Raw query returned {len(rows)} rows")
 
         # Convert to RetrievedChunk objects
         chunks = []
@@ -122,8 +127,13 @@ class KnowledgeRetriever:
                 score=float(row.similarity),
             )
             chunks.append(chunk)
+            logger.debug(f"Retrieved chunk: {chunk.source_type} (score={chunk.score:.3f})")
 
         logger.info(f"Retrieved {len(chunks)} chunks for query (top_k={top_k})")
+
+        if len(chunks) == 0:
+            logger.warning(f"No chunks matched threshold {score_threshold}. Consider lowering threshold.")
+
         return chunks
 
     def _format_embedding(self, embedding: List[float]) -> str:

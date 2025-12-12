@@ -54,7 +54,7 @@ async def get_or_create_source(
         source_type=source_type,
         name=name or source_type.title(),
         description=f"Imported {source_type} source",
-        metadata=metadata or {},
+        source_metadata=metadata or {},
     )
     db.add(source)
     await db.flush()
@@ -81,7 +81,7 @@ async def seed_file(db, llm_client, items: List[dict], batch_size: int) -> int:
                     text_arabic=payload.get("text_arabic"),
                     text_translation=payload.get("text_translation"),
                     embedding=embedding,
-                    metadata=payload.get("metadata") or {},
+                    chunk_metadata=payload.get("metadata") or {},
                     chunk_index=payload.get("chunk_index"),
                 )
             )

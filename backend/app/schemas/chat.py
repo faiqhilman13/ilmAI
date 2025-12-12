@@ -3,7 +3,7 @@
 from typing import Optional, List, Literal
 from uuid import UUID
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ConfigDict
 
 from app.schemas.citation import Citation
 
@@ -18,6 +18,11 @@ class ChatRequest(BaseModel):
 
 class ChatResponse(BaseModel):
     """Schema for chat response."""
+
+    model_config = ConfigDict(
+        populate_by_name=True,
+        use_enum_values=True,
+    )
 
     answer: str
     citations: List[Citation] = []

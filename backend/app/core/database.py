@@ -2,6 +2,7 @@
 
 from typing import AsyncGenerator
 
+from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.orm import DeclarativeBase
 
@@ -12,7 +13,7 @@ settings = get_settings()
 # Create async engine
 engine = create_async_engine(
     settings.database_url,
-    echo=settings.debug,
+    echo=False,  # Disable SQLAlchemy query logging
     pool_pre_ping=True,
     pool_size=5,
     max_overflow=10,
@@ -39,7 +40,7 @@ async def init_db() -> None:
     # Test connection
     async with engine.begin() as conn:
         # Just test connectivity - schema is created via SQL file
-        await conn.execute("SELECT 1")
+        await conn.execute(text("SELECT 1"))
 
 
 async def get_db() -> AsyncGenerator[AsyncSession, None]:

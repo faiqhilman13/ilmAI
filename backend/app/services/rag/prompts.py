@@ -48,12 +48,13 @@ FORMAT OUTPUT (WAJIB):
 Kembalikan output sebagai JSON yang sah SAHAJA (tiada markdown, tiada teks tambahan).
 Skema:
 {
-  "answer": "jawapan penuh dalam Bahasa Malaysia dengan rujukan [1], [2] jika perlu",
+  "answer": "jawapan penuh dalam Bahasa Malaysia. Jangan letak rujukan [1], [2] di dalam teks jawapan; guna senarai 'citations' sahaja.",
   "citations": [1, 3, 5]
 }
 
 Peraturan:
 - "citations" ialah senarai nombor indeks sumber yang anda gunakan daripada konteks.
+- Pastikan setiap fakta dalam jawapan disokong oleh indeks yang betul dalam 'citations'.
 - Jika anda tidak boleh menyokong jawapan dengan sumber, pulangkan:
   {"answer": "Saya tidak menemui maklumat khusus mengenai perkara ini dalam sumber yang ada", "citations": []}
 """
@@ -63,12 +64,13 @@ OUTPUT FORMAT (REQUIRED):
 Return ONLY valid JSON (no markdown, no extra text).
 Schema:
 {
-  "answer": "full answer in English with inline [1], [2] if helpful",
+  "answer": "full answer in English. Do not put inline [1], [2] markers in the answer text; use the 'citations' list only.",
   "citations": [1, 3, 5]
 }
 
 Rules:
 - "citations" is a list of context indices you used.
+- Every factual claim in the answer must be supported by the indices in 'citations'.
 - If you cannot support an answer with the sources, return:
   {"answer": "I could not find specific information about this in the available sources", "citations": []}
 """

@@ -94,6 +94,16 @@ class IslamicRAGPipeline:
 
         logger.info(f"Retrieved {len(chunks)} relevant chunks")
 
+        # Debug: Log chunk details
+        if chunks:
+            for i, chunk in enumerate(chunks[:3]):  # Log first 3 chunks
+                logger.info(
+                    f"Chunk {i+1}: source={chunk.source_type}, score={chunk.score:.3f}, "
+                    f"preview={chunk.text_content[:100]}..."
+                )
+        else:
+            logger.warning("No chunks retrieved! Query may not match any embeddings or threshold too high.")
+
         # 3. Handle case where no relevant chunks found
         if not chunks:
             no_info_response = self._get_no_info_response(language)
@@ -117,17 +127,23 @@ class IslamicRAGPipeline:
         )
 
         # 5. Generate response from LLM (retry once if citations missing)
+        logger.info("Generating LLM response with retrieved context...")
         raw_response, _ = await self._generate_with_citation_retry(
             system_prompt=system_prompt,
             user_prompt=user_prompt,
             chunks=chunks,
         )
 
+        logger.info(f"LLM raw response preview: {raw_response[:200]}...")
+
         # 6. Extract and validate citations
         answer_text, citations = self.citation_manager.extract_citations(
             response=raw_response,
             available_chunks=chunks,
         )
+
+        logger.info(f"Extracted {len(citations)} citations from response")
+        logger.info(f"Final answer preview: {answer_text[:200]}...")
 
         # 7. Add disclaimer if needed
         disclaimer = None

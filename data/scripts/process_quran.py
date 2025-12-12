@@ -155,8 +155,20 @@ def parse_tanzil_xml(file_path: Path) -> dict:
     result = {}
 
     try:
-        tree = ET.parse(file_path)
-        root = tree.getroot()
+        # Read file content and normalize line endings to fix CRLF parsing issues
+        with open(file_path, 'r', encoding='utf-8') as f:
+            content = f.read()
+
+        # Normalize CRLF to LF
+        content = content.replace('\r\n', '\n')
+
+        # Remove the problematic comment block (lines before <quran> tag)
+        # This fixes XML parsing issues with Tanzil.net files that have # characters in comments
+        import re
+        content = re.sub(r'<!--.*?-->', '', content, flags=re.DOTALL)
+
+        # Parse from string instead of file
+        root = ET.fromstring(content)
 
         # Handle both quran XML and translation XML formats
         for sura in root.findall('.//sura'):

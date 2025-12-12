@@ -16,9 +16,18 @@ from app.routers import auth, chat, conversations, bookmarks
 # Configure logging
 settings = get_settings()
 logging.basicConfig(
-    level=getattr(logging, settings.log_level),
+    level=logging.INFO,  # Force INFO level for now
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
 )
+
+# Enable DEBUG for RAG services
+logging.getLogger("app.services.rag").setLevel(logging.DEBUG)
+
+# Reduce verbosity for third-party libraries
+logging.getLogger("httpx").setLevel(logging.WARNING)
+logging.getLogger("sqlalchemy").setLevel(logging.WARNING)
+logging.getLogger("uvicorn.access").setLevel(logging.WARNING)
+
 logger = logging.getLogger(__name__)
 
 

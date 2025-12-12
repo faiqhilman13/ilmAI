@@ -185,6 +185,7 @@ def parse_github_hadith(file_path: Path, collection_key: str) -> list:
 
         arabic_text = (
             item.get("hadithArabic") or
+            item.get("Arabic_Text") or  # sunnah.com format
             item.get("arabic") or
             item.get("text_ar") or
             ""
@@ -192,6 +193,7 @@ def parse_github_hadith(file_path: Path, collection_key: str) -> list:
 
         english_text = (
             item.get("hadithEnglish") or
+            item.get("English_Text") or  # sunnah.com format
             item.get("english") or
             item.get("text_en") or
             item.get("text") or

@@ -18,7 +18,7 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 
 
-@router.post("", response_model=ChatResponse)
+@router.post("", response_model=ChatResponse, response_model_by_alias=True)
 async def send_message(
     request: ChatRequest,
     db: Database,
@@ -109,7 +109,7 @@ async def send_message(
         conversation_id=conversation_id,
         role="assistant",
         content=result.answer,
-        citations=[c.model_dump() for c in result.citations] if result.citations else None,
+        citations=[c.model_dump(by_alias=True) for c in result.citations] if result.citations else None,
         disclaimer=result.disclaimer,
         topics=result.topics,
     )

@@ -1,11 +1,22 @@
 """Citation schemas for Islamic sources."""
 
 from typing import Optional, Literal, Union
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict, Field
+
+
+def to_camel(string: str) -> str:
+    """Convert snake_case to camelCase."""
+    components = string.split('_')
+    return components[0] + ''.join(x.capitalize() for x in components[1:])
 
 
 class BaseCitation(BaseModel):
     """Base citation schema."""
+
+    model_config = ConfigDict(
+        populate_by_name=True,
+        alias_generator=to_camel
+    )
 
     index: int
     source_type: Literal["quran", "hadith", "fiqh", "fatwa"]

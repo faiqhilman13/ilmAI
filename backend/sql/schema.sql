@@ -11,7 +11,7 @@ CREATE TABLE IF NOT EXISTS knowledge_sources (
     source_type VARCHAR(50) NOT NULL, -- 'quran', 'hadith', 'fiqh', 'fatwa'
     name VARCHAR(255) NOT NULL,
     description TEXT,
-    metadata JSONB DEFAULT '{}',
+    source_metadata JSONB DEFAULT '{}',
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
@@ -24,7 +24,7 @@ CREATE TABLE IF NOT EXISTS knowledge_chunks (
     text_arabic TEXT,
     text_translation TEXT,
     embedding vector(1536),  -- OpenAI text-embedding-3-small dimension
-    metadata JSONB NOT NULL DEFAULT '{}',
+    chunk_metadata JSONB NOT NULL DEFAULT '{}',
     chunk_index INTEGER,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
@@ -118,7 +118,7 @@ CREATE TRIGGER update_conversations_updated_at
     EXECUTE FUNCTION update_updated_at_column();
 
 -- Insert default knowledge sources
-INSERT INTO knowledge_sources (source_type, name, description, metadata) VALUES
+INSERT INTO knowledge_sources (source_type, name, description, source_metadata) VALUES
     ('quran', 'Al-Quran', 'The Holy Quran with Uthmani script and translations', '{"translations": ["ms.basmeih", "en.sahih"]}'),
     ('hadith', 'Sahih al-Bukhari', 'Collection of hadith by Imam Bukhari', '{"grading": "sahih"}'),
     ('hadith', 'Sahih Muslim', 'Collection of hadith by Imam Muslim', '{"grading": "sahih"}'),
