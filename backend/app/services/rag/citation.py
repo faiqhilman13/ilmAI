@@ -1,0 +1,215 @@
+"""Citation extraction and formatting service."""
+
+import json
+import re
+import logging
+from typing import List, Tuple, Union, Optional, Any
+
+from app.services.rag.retriever import RetrievedChunk
+from app.schemas.citation import (
+    Citation,
+    QuranCitation,
+    HadithCitation,
+    FiqhCitation,
+    FatwaCitation,
+)
+
+logger = logging.getLogger(__name__)
+
+
+class CitationManager:
+    """Manages citation extraction and formatting from LLM responses."""
+
+    def extract_citations(
+        self,
+        response: str,
+        available_chunks: List[RetrievedChunk],
+    ) -> Tuple[str, List[Citation]]:
+        """Extract citations from LLM response and validate against available chunks.
+
+        Args:
+            response: Raw LLM response text
+            available_chunks: List of chunks that were provided as context
+
+        Returns:
+            Tuple of (response text, list of validated citations)
+        """
+        # Prefer structured JSON output if present
+        structured = self._try_parse_json_response(response)
+        if structured is not None:
+            answer_text = str(structured.get("answer", "")).strip()
+            indices = self._normalize_indices(structured.get("citations"), len(available_chunks))
+            citations = self._citations_from_indices(indices, available_chunks)
+            # Remove any stray inline markers to avoid double-rendering
+            answer_text = re.sub(r"\s*\[\d+\]\s*", " ", answer_text).strip()
+            return answer_text, citations
+
+        # Fallback to bracket markers [1], [2], etc.
+        citation_pattern = r"\[(\d+)\]"
+        found_indices = set(int(m) for m in re.findall(citation_pattern, response))
+        indices = self._normalize_indices(list(found_indices), len(available_chunks))
+        citations = self._citations_from_indices(indices, available_chunks)
+        return response, citations
+
+    def _try_parse_json_response(self, response: str) -> Optional[dict]:
+        """Try to parse a JSON-only response. Returns dict if valid, else None."""
+        text = response.strip()
+        # Strip common code fences
+        if text.startswith("```"):
+            text = re.sub(r"^```(?:json)?\s*", "", text)
+            text = re.sub(r"\s*```$", "", text)
+            text = text.strip()
+        if not (text.startswith("{") and text.endswith("}")):
+            return None
+        try:
+            parsed = json.loads(text)
+            if isinstance(parsed, dict) and "answer" in parsed:
+                return parsed
+        except Exception:
+            return None
+        return None
+
+    def _normalize_indices(self, raw: Any, max_index: int) -> List[int]:
+        """Normalize citation indices into a sorted unique list within range."""
+        if raw is None:
+            return []
+        indices: List[int] = []
+        if isinstance(raw, list):
+            for v in raw:
+                try:
+                    indices.append(int(v))
+                except Exception:
+                    continue
+        else:
+            try:
+                indices = [int(raw)]
+            except Exception:
+                indices = []
+        valid = sorted({i for i in indices if 1 <= i <= max_index})
+        for i in sorted(set(indices) - set(valid)):
+            logger.warning(f"Citation index {i} out of range (max: {max_index})")
+        return valid
+
+    def _citations_from_indices(
+        self, indices: List[int], chunks: List[RetrievedChunk]
+    ) -> List[Citation]:
+        citations: List[Citation] = []
+        for idx in indices:
+            chunk = chunks[idx - 1]
+            citations.append(self._create_citation(chunk, idx))
+        return citations
+
+    def _create_citation(
+        self,
+        chunk: RetrievedChunk,
+        index: int,
+    ) -> Citation:
+        """Create typed citation based on source type.
+
+        Args:
+            chunk: Knowledge chunk
+            index: Citation index
+
+        Returns:
+            Typed citation object
+        """
+        # Create text snippet (truncate if too long)
+        text_snippet = chunk.text_content
+        if len(text_snippet) > 300:
+            text_snippet = text_snippet[:300] + "..."
+
+        metadata = chunk.metadata
+
+        if chunk.source_type == "quran":
+            return QuranCitation(
+                index=index,
+                text_snippet=text_snippet,
+                surah_number=metadata.get("surah_number", 0),
+                surah_name=metadata.get("surah_name", "Unknown"),
+                ayah_start=metadata.get("ayah_start", 0),
+                ayah_end=metadata.get("ayah_end"),
+                arabic_text=chunk.text_arabic,
+                translation=chunk.text_translation or chunk.text_content,
+            )
+
+        elif chunk.source_type == "hadith":
+            grading = metadata.get("grading", "unknown")
+            # Validate grading value
+            if grading not in ["sahih", "hasan", "daif", "mawdu"]:
+                grading = "sahih"  # Default to sahih if unknown
+
+            return HadithCitation(
+                index=index,
+                text_snippet=text_snippet,
+                collection=metadata.get("collection", "Unknown"),
+                hadith_number=str(metadata.get("hadith_number", "?")),
+                grading=grading,
+                book_name=metadata.get("book_name"),
+                narrator_chain=metadata.get("narrator_chain"),
+            )
+
+        elif chunk.source_type == "fiqh":
+            return FiqhCitation(
+                index=index,
+                text_snippet=text_snippet,
+                madhab=metadata.get("madhab", "shafii"),
+                topic=metadata.get("topic", "General"),
+                source_book=metadata.get("source_book"),
+                scholar=metadata.get("scholar"),
+                evidence=metadata.get("evidence"),
+            )
+
+        elif chunk.source_type == "fatwa":
+            return FatwaCitation(
+                index=index,
+                text_snippet=text_snippet,
+                issuing_authority=metadata.get("issuing_authority", "Unknown"),
+                fatwa_number=metadata.get("fatwa_number"),
+                date=metadata.get("date"),
+                topic=metadata.get("topic", ""),
+            )
+
+        # Fallback for unknown source types
+        return FiqhCitation(
+            index=index,
+            text_snippet=text_snippet,
+            madhab="unknown",
+            topic="General",
+        )
+
+    def build_context_with_markers(
+        self,
+        chunks: List[RetrievedChunk],
+    ) -> str:
+        """Build context string with numbered citation markers.
+
+        Args:
+            chunks: List of knowledge chunks
+
+        Returns:
+            Formatted context string
+        """
+        from app.services.rag.prompts import format_chunk_for_context
+
+        context_parts = []
+        for idx, chunk in enumerate(chunks, 1):
+            context_parts.append(format_chunk_for_context(chunk, idx))
+
+        return "\n\n---\n\n".join(context_parts)
+
+    def validate_citations(
+        self,
+        citations: List[Citation],
+        response: str,
+    ) -> List[Citation]:
+        """Validate that all citations are actually referenced in the response.
+
+        Args:
+            citations: List of citations
+            response: Response text
+
+        Returns:
+            List of citations that are actually used in the response
+        """
+        used_indices = set(int(m) for m in re.findall(r'\[(\d+)\]', response))
+        return [c for c in citations if c.index in used_indices]

@@ -1,0 +1,130 @@
+"""OpenAI LLM client implementation."""
+
+import logging
+from typing import AsyncGenerator, List
+
+import tiktoken
+from openai import AsyncOpenAI
+from tenacity import retry, stop_after_attempt, wait_exponential
+
+from app.services.llm.base import BaseLLMClient
+from app.core.exceptions import LLMError
+
+logger = logging.getLogger(__name__)
+
+
+class OpenAIClient(BaseLLMClient):
+    """OpenAI API client for chat and embeddings."""
+
+    def __init__(
+        self,
+        api_key: str,
+        chat_model: str = "gpt-4o",
+        embedding_model: str = "text-embedding-3-small",
+    ):
+        """Initialize OpenAI client.
+
+        Args:
+            api_key: OpenAI API key
+            chat_model: Model for chat completions
+            embedding_model: Model for embeddings
+        """
+        self.client = AsyncOpenAI(api_key=api_key)
+        self.chat_model = chat_model
+        self.embedding_model = embedding_model
+
+        # Initialize tokenizer
+        try:
+            self.tokenizer = tiktoken.encoding_for_model(chat_model)
+        except KeyError:
+            self.tokenizer = tiktoken.get_encoding("cl100k_base")
+
+    @retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=1, max=10))
+    async def generate(
+        self,
+        system_prompt: str,
+        user_prompt: str,
+        temperature: float = 0.3,
+        max_tokens: int = 2000,
+    ) -> str:
+        """Generate a response from OpenAI."""
+        try:
+            messages = [
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_prompt},
+            ]
+
+            response = await self.client.chat.completions.create(
+                model=self.chat_model,
+                messages=messages,
+                temperature=temperature,
+                max_tokens=max_tokens,
+            )
+
+            return response.choices[0].message.content or ""
+
+        except Exception as e:
+            logger.error(f"OpenAI generation error: {e}")
+            raise LLMError(f"OpenAI API error: {str(e)}")
+
+    async def generate_stream(
+        self,
+        system_prompt: str,
+        user_prompt: str,
+        temperature: float = 0.3,
+        max_tokens: int = 2000,
+    ) -> AsyncGenerator[str, None]:
+        """Generate a streaming response from OpenAI."""
+        try:
+            messages = [
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_prompt},
+            ]
+
+            stream = await self.client.chat.completions.create(
+                model=self.chat_model,
+                messages=messages,
+                temperature=temperature,
+                max_tokens=max_tokens,
+                stream=True,
+            )
+
+            async for chunk in stream:
+                if chunk.choices[0].delta.content:
+                    yield chunk.choices[0].delta.content
+
+        except Exception as e:
+            logger.error(f"OpenAI streaming error: {e}")
+            raise LLMError(f"OpenAI API error: {str(e)}")
+
+    @retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=1, max=10))
+    async def generate_embedding(self, text: str) -> List[float]:
+        """Generate embedding for a single text."""
+        try:
+            response = await self.client.embeddings.create(
+                model=self.embedding_model,
+                input=text,
+            )
+            return response.data[0].embedding
+
+        except Exception as e:
+            logger.error(f"OpenAI embedding error: {e}")
+            raise LLMError(f"OpenAI embedding error: {str(e)}")
+
+    @retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=1, max=10))
+    async def generate_embeddings_batch(self, texts: List[str]) -> List[List[float]]:
+        """Generate embeddings for multiple texts."""
+        try:
+            response = await self.client.embeddings.create(
+                model=self.embedding_model,
+                input=texts,
+            )
+            return [item.embedding for item in response.data]
+
+        except Exception as e:
+            logger.error(f"OpenAI batch embedding error: {e}")
+            raise LLMError(f"OpenAI embedding error: {str(e)}")
+
+    def count_tokens(self, text: str) -> int:
+        """Count tokens using tiktoken."""
+        return len(self.tokenizer.encode(text))

@@ -1,0 +1,139 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  html {
+    @apply antialiased;
+  }
+
+  body {
+    @apply bg-gray-50 text-gray-900;
+  }
+}
+
+@layer components {
+  .btn-primary {
+    @apply bg-primary-600 text-white px-4 py-2 rounded-lg hover:bg-primary-700
+           transition-colors duration-200 font-medium disabled:opacity-50 disabled:cursor-not-allowed;
+  }
+
+  .btn-secondary {
+    @apply bg-gray-200 text-gray-800 px-4 py-2 rounded-lg hover:bg-gray-300
+           transition-colors duration-200 font-medium;
+  }
+
+  .input {
+    @apply w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none
+           focus:ring-2 focus:ring-primary-500 focus:border-transparent;
+  }
+
+  .card {
+    @apply bg-white rounded-xl shadow-sm border border-gray-100;
+  }
+
+  /* Arabic text styling */
+  .arabic-text {
+    @apply font-arabic text-right leading-loose;
+    direction: rtl;
+  }
+
+  /* Citation badge colors */
+  .badge-quran {
+    @apply bg-green-100 text-green-800;
+  }
+
+  .badge-hadith {
+    @apply bg-amber-100 text-amber-800;
+  }
+
+  .badge-fiqh {
+    @apply bg-blue-100 text-blue-800;
+  }
+
+  .badge-fatwa {
+    @apply bg-purple-100 text-purple-800;
+  }
+
+  /* Hadith grading badges */
+  .grading-sahih {
+    @apply bg-green-100 text-green-800;
+  }
+
+  .grading-hasan {
+    @apply bg-yellow-100 text-yellow-800;
+  }
+
+  .grading-daif {
+    @apply bg-orange-100 text-orange-800;
+  }
+
+  .grading-mawdu {
+    @apply bg-red-100 text-red-800;
+  }
+}
+
+/* Markdown content styling */
+.markdown-content h1 {
+  @apply text-2xl font-bold mb-4;
+}
+
+.markdown-content h2 {
+  @apply text-xl font-semibold mb-3;
+}
+
+.markdown-content h3 {
+  @apply text-lg font-semibold mb-2;
+}
+
+.markdown-content p {
+  @apply mb-3;
+}
+
+.markdown-content ul {
+  @apply list-disc list-inside mb-3;
+}
+
+.markdown-content ol {
+  @apply list-decimal list-inside mb-3;
+}
+
+.markdown-content blockquote {
+  @apply border-l-4 border-primary-500 pl-4 italic my-3;
+}
+
+.markdown-content code {
+  @apply bg-gray-100 px-1 rounded;
+}
+
+/* Citation markers in text */
+.citation-marker {
+  @apply text-primary-600 font-semibold cursor-pointer hover:text-primary-800;
+}
+
+/* Disclaimer styling */
+.disclaimer {
+  @apply bg-amber-50 border-l-4 border-amber-500 p-4 my-4 text-sm;
+}
+
+.disclaimer strong {
+  @apply text-amber-800;
+}
+
+/* Loading animation */
+@keyframes pulse-dot {
+  0%, 100% { opacity: 0.4; }
+  50% { opacity: 1; }
+}
+
+.loading-dot {
+  animation: pulse-dot 1.4s ease-in-out infinite;
+}
+
+.loading-dot:nth-child(2) {
+  animation-delay: 0.2s;
+}
+
+.loading-dot:nth-child(3) {
+  animation-delay: 0.4s;
+}
