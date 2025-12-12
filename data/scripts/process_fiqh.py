@@ -15,7 +15,7 @@ Note: PDF extraction requires PyMuPDF (fitz) library:
 import json
 import re
 from pathlib import Path
-from typing import Optional
+from typing import Dict, List, Optional
 
 # Directories
 RAW_DIR = Path(__file__).parent.parent / "raw" / "fiqh"
@@ -26,49 +26,296 @@ FIQH_CATEGORIES = {
     "taharah": {
         "name_en": "Purification",
         "name_ms": "Taharah (Bersuci)",
-        "keywords": ["wuduk", "wudu", "ablution", "mandi", "bath", "najis", "tayammum", "istinja"],
+        "keywords": [
+            "wuduk",
+            "wudu",
+            "ablution",
+            "mandi",
+            "bath",
+            "najis",
+            "tayammum",
+            "istinja",
+            "طهارة",
+            "وضوء",
+            "غسل",
+            "تيمم",
+            "نجاسة",
+            "استنجاء",
+        ],
     },
     "solat": {
         "name_en": "Prayer",
         "name_ms": "Solat",
-        "keywords": ["solat", "salat", "prayer", "rukuk", "sujud", "takbir", "tasyahhud", "salam"],
+        "keywords": [
+            "solat",
+            "salat",
+            "prayer",
+            "rukuk",
+            "sujud",
+            "takbir",
+            "tasyahhud",
+            "salam",
+            "صلاة",
+            "ركوع",
+            "سجود",
+            "تكبير",
+            "تشهد",
+            "سلام",
+        ],
     },
     "puasa": {
         "name_en": "Fasting",
         "name_ms": "Puasa",
-        "keywords": ["puasa", "fasting", "ramadan", "sahur", "iftar", "berbuka", "qadha"],
+        "keywords": [
+            "puasa",
+            "fasting",
+            "ramadan",
+            "sahur",
+            "iftar",
+            "berbuka",
+            "qadha",
+            "صوم",
+            "صيام",
+            "رمضان",
+            "إفطار",
+            "سحور",
+            "قضاء",
+        ],
     },
     "zakat": {
         "name_en": "Zakat",
         "name_ms": "Zakat",
-        "keywords": ["zakat", "nisab", "haul", "fitrah", "sedekah"],
+        "keywords": ["zakat", "nisab", "haul", "fitrah", "sedekah", "زكاة", "نصاب", "حول", "صدقة"],
     },
     "haji": {
         "name_en": "Pilgrimage",
         "name_ms": "Haji dan Umrah",
-        "keywords": ["haji", "hajj", "umrah", "tawaf", "sa'i", "ihram", "miqat", "wukuf"],
+        "keywords": [
+            "haji",
+            "hajj",
+            "umrah",
+            "tawaf",
+            "sa'i",
+            "ihram",
+            "miqat",
+            "wukuf",
+            "حج",
+            "عمرة",
+            "طواف",
+            "سعي",
+            "إحرام",
+            "ميقات",
+            "وقوف",
+        ],
     },
     "muamalat": {
         "name_en": "Transactions",
         "name_ms": "Muamalat",
-        "keywords": ["jual beli", "trade", "riba", "interest", "hutang", "debt", "akad", "contract"],
+        "keywords": [
+            "jual beli",
+            "trade",
+            "riba",
+            "interest",
+            "hutang",
+            "debt",
+            "akad",
+            "contract",
+            "بيع",
+            "ربا",
+            "قرض",
+            "دين",
+            "عقد",
+        ],
     },
     "munakahat": {
         "name_en": "Marriage",
         "name_ms": "Munakahat (Perkahwinan)",
-        "keywords": ["nikah", "marriage", "talaq", "divorce", "iddah", "mahar", "nafkah", "walimah"],
+        "keywords": [
+            "nikah",
+            "marriage",
+            "talaq",
+            "divorce",
+            "iddah",
+            "mahar",
+            "nafkah",
+            "walimah",
+            "نكاح",
+            "طلاق",
+            "عدة",
+            "مهر",
+            "نفقة",
+        ],
     },
     "jenazah": {
         "name_en": "Funeral",
         "name_ms": "Jenazah",
-        "keywords": ["jenazah", "funeral", "mati", "death", "kafan", "solat jenazah", "kubur"],
+        "keywords": [
+            "jenazah",
+            "funeral",
+            "mati",
+            "death",
+            "kafan",
+            "solat jenazah",
+            "kubur",
+            "جنائز",
+            "ميت",
+            "كفن",
+            "دفن",
+            "غسل الميت",
+        ],
     },
     "makanan": {
         "name_en": "Food",
         "name_ms": "Makanan dan Minuman",
-        "keywords": ["halal", "haram", "makanan", "food", "minuman", "drink", "sembelihan"],
+        "keywords": [
+            "halal",
+            "haram",
+            "makanan",
+            "food",
+            "minuman",
+            "drink",
+            "sembelihan",
+            "حلال",
+            "حرام",
+            "أطعمة",
+            "شراب",
+            "ذبيحة",
+        ],
     },
 }
+
+# Arabic Digital Humanities Fiqh Corpus (OpenITI markup)
+ADH_DIR = RAW_DIR / "adh_fiqh_corpus" / "txt"
+
+
+def parse_openiti_metadata(lines: List[str]) -> Dict[str, str]:
+    """Extract OpenITI #META# header key-values."""
+    meta: Dict[str, str] = {}
+    for line in lines:
+        if not line.startswith("#META#"):
+            continue
+        match = re.match(r"#META#\s*([^\s]+)\s*::\s*(.*)$", line)
+        if not match:
+            continue
+        raw_key = match.group(1).strip()
+        key = raw_key.split(".")[-1]  # e.g., 010.AuthorNAME -> AuthorNAME
+        value = match.group(2).strip()
+        if key and value:
+            meta[key] = value
+    return meta
+
+
+def clean_openiti_text(raw_text: str) -> str:
+    """Remove OpenITI headers/markers and normalize whitespace."""
+    text = raw_text
+    text = re.sub(r"^######OpenITI#.*$", "", text, flags=re.MULTILINE)
+    text = re.sub(r"^#META#.*$", "", text, flags=re.MULTILINE)
+    text = re.sub(r"^#\s*.*$", "", text, flags=re.MULTILINE)
+    # Remove page/milestone markers
+    text = re.sub(r"PageV\d+P\d+", " ", text)
+    text = re.sub(r"Milestone\d+", " ", text)
+    # Remove bracketed section markers but keep content
+    text = re.sub(r"^###\s*\|{1,3}.*$", " ", text, flags=re.MULTILINE)
+    text = re.sub(r"\s+", " ", text)
+    return text.strip()
+
+
+def chunk_text_sliding(text: str, chunk_size: int = 1200, overlap: int = 200) -> List[str]:
+    """Chunk text with character sliding window and overlap."""
+    if not text:
+        return []
+    chunks: List[str] = []
+    cursor = 0
+    text_len = len(text)
+    while cursor < text_len:
+        end = min(text_len, cursor + chunk_size)
+        if end < text_len:
+            back = text.rfind(" ", cursor, end)
+            if back > cursor + int(chunk_size * 0.6):
+                end = back
+        chunk = text[cursor:end].strip()
+        if chunk:
+            chunks.append(chunk)
+        if end >= text_len:
+            break
+        cursor = max(end - overlap, cursor + 1)
+    return chunks
+
+
+def detect_madhab(meta: Dict[str, str], filename: str, head_text: str) -> str:
+    """Best-effort madhab detection for filtering."""
+    haystack = " ".join(
+        [
+            filename,
+            meta.get("BookURI", ""),
+            meta.get("AuthorNAME", ""),
+            meta.get("AuthorAKA", ""),
+            head_text,
+        ]
+    )
+    if re.search(r"الشافعي|شافعي|Shafici|Shafii|Shafi", haystack, flags=re.IGNORECASE):
+        return "shafii"
+    return "general"
+
+
+def process_adh_fiqh_corpus(max_files: int | None = None) -> List[dict]:
+    """Process ADH/OpenITI fiqh corpus into chunks."""
+    if not ADH_DIR.exists():
+        print("  ADH corpus not found, skipping.")
+        return []
+
+    corpus_files = sorted(ADH_DIR.glob("*.txt"))
+    if max_files:
+        corpus_files = corpus_files[:max_files]
+
+    print(f"Processing ADH fiqh corpus ({len(corpus_files)} files)...")
+    chunks: List[dict] = []
+    for file_path in corpus_files:
+        try:
+            raw_text = file_path.read_text(encoding="utf-8", errors="ignore")
+        except Exception as e:
+            print(f"  Skipping {file_path.name}: {e}")
+            continue
+
+        lines = raw_text.splitlines()
+        meta = parse_openiti_metadata(lines[:300])
+        cleaned = clean_openiti_text(raw_text)
+        if not cleaned:
+            continue
+
+        file_head = cleaned[:2000]
+        madhab = detect_madhab(meta, file_path.name, file_head)
+        file_chunks = chunk_text_sliding(cleaned, chunk_size=1200, overlap=200)
+
+        author_name = meta.get("AuthorNAME") or meta.get("AuthorAKA") or ""
+        book_uri = meta.get("BookURI") or file_path.stem
+
+        for idx, chunk_text in enumerate(file_chunks):
+            category = classify_topic(chunk_text)
+            cat_info = FIQH_CATEGORIES.get(category, {})
+            topic_label = cat_info.get("name_ms", category.title())
+            chunks.append(
+                {
+                    "source_type": "fiqh",
+                    "text_content": chunk_text,
+                    "text_arabic": chunk_text,
+                    "text_translation": "",
+                    "metadata": {
+                        "topic": topic_label,
+                        "category": category,
+                        "madhab": madhab,
+                        "source": "ADH Fiqh Corpus",
+                        "source_name": "ADH Fiqh Corpus",
+                        "author": author_name,
+                        "book_uri": book_uri,
+                        "language": "ar",
+                        "chunk_index": idx,
+                    },
+                }
+            )
+
+    print(f"  Created {len(chunks)} ADH fiqh chunks")
+    return chunks
 
 
 def classify_topic(text: str) -> str:
@@ -326,6 +573,12 @@ def process_fiqh_data():
     else:
         print("  No sample data found")
 
+    print()
+
+    # Process ADH/OpenITI fiqh corpus
+    adh_chunks = process_adh_fiqh_corpus()
+    if adh_chunks:
+        all_chunks.extend(adh_chunks)
     print()
 
     # Process PDF files

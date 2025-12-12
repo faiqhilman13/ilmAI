@@ -27,8 +27,15 @@ logging.basicConfig(level=logging.INFO)
 
 
 def iter_processed_files(root: Path) -> Iterable[Path]:
+    """Yield processed chunk files.
+
+    By default we only seed files that look like chunk payloads (e.g. *_chunks.json),
+    and skip summaries/aux files.
+    """
     for path in root.rglob("*.json"):
         if path.name.startswith("."):
+            continue
+        if not path.name.endswith("_chunks.json"):
             continue
         yield path
 
@@ -37,7 +44,8 @@ def load_items(path: Path) -> List[dict]:
     with path.open("r", encoding="utf-8") as f:
         data = json.load(f)
     if not isinstance(data, list):
-        raise ValueError(f"Expected list in {path}")
+        logger.warning(f"Skipping non-list JSON file: {path}")
+        return []
     return [item for item in data if isinstance(item, dict)]
 
 
@@ -133,6 +141,8 @@ async def main(args: argparse.Namespace) -> None:
             logger.info(f"Seeding from {file_path.relative_to(repo_root)}")
             try:
                 items = load_items(file_path)
+                if args.max_items:
+                    items = items[: args.max_items]
                 inserted = await seed_file(db, llm_client, items, args.batch_size)
                 total_inserted += inserted
                 logger.info(f"Inserted {inserted} chunks from {file_path.name}")
@@ -150,5 +160,10 @@ if __name__ == "__main__":
         help="Path to processed JSON folder (relative to repo root).",
     )
     parser.add_argument("--batch-size", type=int, default=50)
+    parser.add_argument(
+        "--max-items",
+        type=int,
+        default=None,
+        help="Max items to seed per file (useful for incremental seeding).",
+    )
     asyncio.run(main(parser.parse_args()))
-

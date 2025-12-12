@@ -10,9 +10,19 @@ IlmuAI is an AI-powered Islamic knowledge platform for Malaysian Muslims with RA
 
 ## Architecture Overview
 
-### Core Pipeline: RAG + Safety + Citations
+### Core Pipeline: Advanced RAG + Safety + Citations
 
-1. **User Question** → 2. **Topic Classification** (safety check) → 3. **Vector Search** (pgvector) → 4. **LLM Generation** → 5. **Citation Extraction** → 6. **Response with Disclaimer**
+**Full Pipeline Flow:**
+1. **User Question** (EN/MS) →
+2. **Topic Classification** (safety check for sensitive topics) →
+3. **LLM Query Planner** (rewrites + explicit reference detection) →
+4. **Hybrid Retrieval** (dense + sparse search with RRF fusion) →
+5. **Context Expansion** (Quran neighbor ayahs + source balancing) →
+6. **Two-Stage Reranking** (cross-encoder + LLM judge) →
+7. **LLM Generation** (structured JSON output) →
+8. **Citation Extraction** (validate + map to chunks) →
+9. **Answer Assembly** (format + add disclaimer) →
+10. **Response** (citations + disclaimer + topics)
 
 ### Service Layer Structure
 
@@ -23,10 +33,12 @@ IlmuAI is an AI-powered Islamic knowledge platform for Malaysian Muslims with RA
 - Note: Anthropic doesn't have embedding API, uses OpenAI for embeddings
 
 **RAG Pipeline (`backend/app/services/rag/`)**
-- `retriever.py`: pgvector semantic search + metadata filtering
-- `pipeline.py`: Main orchestration (retrieve → prompt → extract citations)
-- `citation.py`: Citation metadata extraction from LLM responses
-- `prompts.py`: System/user prompts (bilingual, context-aware)
+- `retriever.py`: Hybrid retrieval (dense pgvector + sparse FTS BM25) with RRF fusion, multi-query expansion, query planning
+- `pipeline.py`: Main orchestration (plan → retrieve → rerank → generate → extract citations)
+- `reranker.py`: Cross-encoder (BAAI/bge-reranker-base) + LLM judge for two-stage reranking
+- `citation.py`: Citation metadata extraction + validation from LLM responses
+- `logging_utils.py`: Colored boxed debug logging for each pipeline stage
+- `prompts.py`: System/user prompts (bilingual, context-aware, structured JSON)
 
 **Safety Layer (`backend/app/services/safety/`)**
 - `classifier.py`: Topic classification + sensitivity detection (aqidah, munakahat, contemporary issues)
@@ -95,16 +107,42 @@ Example: `/api/bookmarks` endpoint (model, schema, router all follow this patter
 
 ## Critical Implementation Details
 
+### Retrieval Pipeline (Session 4 Upgrade)
+**Hybrid Dense + Sparse Search:**
+- **Dense Search**: pgvector cosine similarity (OpenAI text-embedding-3-small, 1536 dims)
+- **Sparse Search**: PostgreSQL full-text search (BM25-style) with GIN index
+- **Fusion**: Reciprocal Rank Fusion (RRF) to combine both result sets
+- **Index**: IVFFlat (100 lists) on embeddings, GIN on text_content
+
+**Query Planning:**
+- LLM generates up to `rag_num_rewrites` query rewrites (EN/MS/AR/transliteration variants)
+- Regex heuristics detect explicit references (e.g., `2:255`, "Hadith #20", "Bukhari")
+- Structured filter extraction for source/madhab/topic constraints
+- Multi-query expansion improves recall for ambiguous questions
+
+**Context Expansion:**
+- Quran neighbor ayahs: When single-ayah chunk retrieved, includes ±`rag_quran_context_window` ayahs
+- Source balancing: `rag_per_source_k` per source to ensure diverse results (configurable per query intent)
+- Explicit range handling: Normalizes Unicode dashes (`88:14‑16` → `88:14-16`) for correct range parsing
+
+**Two-Stage Reranking:**
+- Stage 1: Cross-encoder (BAAI/bge-reranker-base) for pairwise relevance scoring
+- Stage 2: LLM judge (GPT) for final relevance ordering on top `rag_llm_judge_candidates`
+- Final context uses top `rag_rerank_top_k` reranked chunks
+
 ### pgvector Configuration
 - Dimension: 1536 (OpenAI text-embedding-3-small)
 - Index: IVFFlat (100 lists) for performance
 - Search: Cosine similarity
 - **Important**: Index is created in `backend/sql/schema.sql` - must re-create if dimension changes
+- **FTS Index**: GIN index on `text_content` for sparse search (created post-Session 4)
 
 ### Citation Extraction
-The RAG pipeline expects LLM to include source references in specific format:
-- Format is NOT enforced currently - relies on prompt engineering
-- Consider implementing structured output parsing (JSON in response) for reliability
+The RAG pipeline uses structured JSON output from LLM:
+- LLM returns JSON with `answer`, `citations: [{type, source_type, references...}]` fields
+- Citation matcher validates references against available chunks
+- Automatically fallbacks to unstructured parsing if JSON parsing fails
+- Supports QuranCitation, HadithCitation, FiqhCitation, FatwaCitation types
 
 ### Language Support
 - Response language set per conversation (BM default for Malaysia)
@@ -158,11 +196,13 @@ docker-compose down    # Stop services
 
 ## Key Files to Understand First
 
-1. **Backend Configuration**: `backend/app/config.py` (all settings, LLM provider selection)
-2. **Main FastAPI App**: `backend/app/main.py` (lifespan, dependency injection)
-3. **Chat Router**: `backend/app/routers/chat.py` (orchestrates RAG pipeline)
-4. **RAG Pipeline**: `backend/app/services/rag/pipeline.py` (core logic)
-5. **Database Schema**: `backend/sql/schema.sql` (pgvector setup, table structure)
+1. **Backend Configuration**: `backend/app/config.py` (all RAG settings: `rag_use_hybrid`, `rag_num_rewrites`, `rag_per_source_k`, etc.)
+2. **Main FastAPI App**: `backend/app/main.py` (lifespan, dependency injection, logging setup)
+3. **Chat Router**: `backend/app/routers/chat.py` (orchestrates RAG pipeline, streaming)
+4. **RAG Retriever**: `backend/app/services/rag/retriever.py` (hybrid search, multi-query, planning)
+5. **RAG Reranker**: `backend/app/services/rag/reranker.py` (cross-encoder + LLM judge)
+6. **RAG Pipeline**: `backend/app/services/rag/pipeline.py` (orchestrates entire flow with colored logging)
+7. **Database Schema**: `backend/sql/schema.sql` (pgvector + FTS index setup)
 
 ## Testing & Debugging
 
@@ -172,8 +212,12 @@ docker-compose down    # Stop services
 - Try endpoints directly in Swagger
 
 ### Debug Tips
-- Enable logging: Check `backend/app/main.py` for logger setup
-- RAG pipeline logs topic classification and retrieval in `IslamicRAGPipeline.answer()`
+- **Colored RAG Logs**: Each pipeline stage (query planning, retrieval, reranking, generation, citations) is in colored boxes
+- Check `backend/app/services/rag/logging_utils.py` for debug section customization
+- Query planner logs: Query rewrites, detected references, source priorities
+- Retriever logs: Dense + sparse results, RRF scores, context expansion
+- Reranker logs: Cross-encoder + LLM judge ordering
+- Citation extraction logs: Matched citations, validation results
 - Frontend chat state: Check `chatStore.ts` for message flow
 
 ## Important Architectural Constraints
@@ -184,9 +228,38 @@ docker-compose down    # Stop services
 4. **Shafi'i Madhab Focus**: When madhab-specific, default to Shafi'i (Malaysian Islamic standard)
 5. **LLM Agnostic**: Backend designed to switch between OpenAI/Anthropic without code changes (config only)
 
-## Next Major Work
+## RAG Configuration Tuning Knobs
 
-- **Session 3**: Embedding generation and database seeding
-- **Session 4**: End-to-end testing
-- **Session 5**: Error handling, rate limiting, caching
-- See `sessions/PLAN.md` for detailed roadmap
+All these settings are in `backend/app/config.py` and can be tweaked for different performance/quality tradeoffs:
+
+**Retrieval Settings:**
+- `rag_use_hybrid`: Enable/disable hybrid dense+sparse (default: True)
+- `rag_dense_candidates`: Top-K from dense search before RRF (default: 50)
+- `rag_sparse_candidates`: Top-K from sparse search before RRF (default: 50)
+- `rag_rrf_k`: RRF constant for fusion (default: 60)
+- `rag_score_threshold`: Minimum similarity for chunk inclusion (default: 0.3, lower = more permissive)
+
+**Query Expansion:**
+- `rag_multi_query`: Enable/disable query rewrites (default: True)
+- `rag_num_rewrites`: Max number of rewrites per language (default: 3)
+- `rag_self_filtering`: Filter out low-confidence rewrites (default: True)
+
+**Source Balancing:**
+- `rag_per_source_k`: Chunks per source for balanced retrieval (default: 5, Quran-cue only)
+- `rag_use_source_priors`: Enable source weighting based on query intent (default: True)
+
+**Context Expansion:**
+- `rag_quran_context_window`: Ayahs to include left/right of single-ayah chunks (default: 3)
+
+**Reranking:**
+- `rag_use_cross_encoder_rerank`: Enable Stage 1 reranking (default: True)
+- `rag_cross_encoder_model`: Model for Stage 1 (default: "BAAI/bge-reranker-base")
+- `rag_use_llm_judge_rerank`: Enable Stage 2 LLM reranking (default: True)
+- `rag_llm_judge_candidates`: Top-K chunks for LLM judge (default: 10)
+- `rag_rerank_top_k`: Final context size after reranking (default: 8)
+
+## Session History
+
+- **Session 3** (Dec 12): Fixed XML parsing (CRLF handling), Quran translation embedding, hadith/fiqh data
+- **Session 4** (Dec 12): Advanced RAG upgrade - hybrid search, query planning, reranking, logging
+- See `sessions/` directory for detailed notes per session
