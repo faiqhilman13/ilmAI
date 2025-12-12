@@ -39,6 +39,11 @@ WITH (lists = 100);
 CREATE INDEX IF NOT EXISTS idx_knowledge_chunks_source_type
 ON knowledge_chunks(source_type);
 
+-- Index for sparse full-text search (hybrid retrieval)
+CREATE INDEX IF NOT EXISTS idx_knowledge_chunks_text_fts
+ON knowledge_chunks
+USING GIN (to_tsvector('simple', text_content));
+
 -- Users table
 CREATE TABLE IF NOT EXISTS users (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),

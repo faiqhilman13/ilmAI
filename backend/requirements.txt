@@ -23,6 +23,10 @@ anthropic==0.42.0
 tiktoken==0.8.0
 numpy==2.2.1
 
+# Reranking (optional but enabled by default)
+sentence-transformers==3.2.1
+torch>=2.1.0
+
 # Configuration
 pydantic-settings==2.7.0
 python-dotenv==1.0.1

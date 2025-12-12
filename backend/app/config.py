@@ -43,6 +43,23 @@ class Settings(BaseSettings):
     rag_top_k: int = 10
     rag_rerank_top_k: int = 5
     rag_score_threshold: float = 0.2
+    rag_use_hybrid: bool = True
+    rag_dense_candidates: int = 30
+    rag_sparse_candidates: int = 30
+    rag_rrf_k: int = 60
+    rag_multi_query: bool = True
+    rag_num_rewrites: int = 3
+    rag_self_filtering: bool = True
+    # Per-source balancing is applied only for Quran-cue queries.
+    rag_per_source_k: int = 1
+    rag_use_source_priors: bool = True
+    rag_quran_context_window: int = 1
+
+    # Reranking
+    rag_use_cross_encoder_rerank: bool = True
+    rag_cross_encoder_model: str = "BAAI/bge-reranker-base"
+    rag_use_llm_judge_rerank: bool = True
+    rag_llm_judge_candidates: int = 8
     chunk_size: int = 500
     chunk_overlap: int = 100
 
