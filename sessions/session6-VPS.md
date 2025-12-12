@@ -45,28 +45,45 @@ Result:
 
 - VPS infrastructure containers are running (Postgres/Redis/pgAdmin).
 - Database is migrated; embeddings and vectors are present on VPS.
+- Backend is running on the VPS (Python venv) bound to `127.0.0.1:8000` inside a `tmux` session.
+- Caddy is installed and serving HTTPS:
+  - `https://46.224.20.19.sslip.io` → reverse proxy to `127.0.0.1:8000`
+  - Verified `GET https://46.224.20.19.sslip.io/health` returns `200`.
 
 ### what’s left / next steps
 
-1) Run the backend API on the VPS
-   - Recommended: bind backend to `127.0.0.1:8000` and put a reverse proxy (Caddy/Nginx) on `443`.
-   - Configure `backend/.env`:
-     - `OPENAI_API_KEY`
-     - `DATABASE_URL=postgresql+asyncpg://ilmuai_admin:secret123@localhost:5432/ilmuai`
-     - `REDIS_URL=redis://localhost:6379/0`
-     - `CORS_ORIGINS` to your Netlify domain
+1) Deploy frontend on Netlify and point it at the HTTPS API
+   - Netlify env: `VITE_API_URL=https://46.224.20.19.sslip.io/api`
+   - Ensure backend `CORS_ORIGINS` includes the Netlify site URL.
 
-2) Add HTTPS and expose only ports 80/443 publicly
-   - Use a temporary domain like `46.224.20.19.sslip.io` (or a real domain later).
-   - Reverse proxy `https://<domain>` → `http://127.0.0.1:8000`.
+2) Make backend process persistent (recommended)
+   - `tmux` works for now, but consider a `systemd` service for auto-restart on reboot.
 
-3) Deploy frontend on Netlify and point it at the HTTPS API
-   - Set frontend env `VITE_API_URL=https://<domain>/api`.
-
-4) (Optional) Dockerize backend in production compose
+3) (Optional) Dockerize backend + Caddy (one-command deploy)
    - Current `docker/docker-compose.yml` is infra-only.
-   - Add `backend` + `caddy` services for one-command deployment.
+   - Add `backend` + `caddy` services for one-command deployment + env management.
 
-5) (Optional) Finish embedding the remaining fiqh corpus
+4) (Optional) Finish embedding remaining fiqh corpus
    - Not required for VPS migration, but still pending from Session 5.
-   - This can be done from any machine as long as it writes into the VPS Postgres.
+   - Can be done on any machine as long as it writes into the VPS Postgres.
+
+### can we delete local data?
+
+Yes, once you’ve verified the VPS is your source of truth:
+
+- Keep locally (recommended minimum):
+  - The git repo (code)
+  - Your SSH private key: `~/.ssh/ilmuai_hetzner`
+  - A Postgres dump backup (optional but recommended)
+
+- You can turn off local Docker and remove local DB volumes if:
+  - The VPS Postgres has the correct counts and app answers look correct.
+  - You have at least one backup dump stored somewhere safe.
+
+Suggested safety checklist before deleting local data:
+1) VPS DB counts match local (done).
+2) `GET https://46.224.20.19.sslip.io/health` works (done).
+3) Run 3–5 test prompts in the app and confirm citations work.
+4) Take a VPS backup dump:
+   - `docker exec -i ilmuai-postgres pg_dump -U ilmuai_admin -d ilmuai > /root/ilmuai_backup.sql`
+   - Download it to your Mac or store in cloud storage.
