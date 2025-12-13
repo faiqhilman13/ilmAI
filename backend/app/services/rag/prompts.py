@@ -220,7 +220,12 @@ def build_user_prompt(
 
 Sila jawab soalan di atas berdasarkan sumber rujukan yang disediakan."""
         if structured:
-            prompt += "\n\nIngat: Kembalikan output sebagai JSON SAHAJA mengikut skema yang diberi."
+            prompt += (
+                "\n\nIngat: Kembalikan output sebagai JSON SAHAJA mengikut skema yang diberi."
+                "\n- Jangan letak rujukan [1], [2] di dalam teks jawapan."
+                "\n- Jangan tulis rujukan dalam kurungan seperti (Al-Quran, ...), dan jangan mereka nombor surah/ayat/hadis."
+                "\n- Jika anda perlu menyebut rujukan (contoh: 'Al-Baqarah 2:256'), SALIN tepat seperti yang tertera dalam SUMBER RUJUKAN."
+            )
         else:
             prompt += "\nPastikan setiap fakta disertakan dengan rujukan [1], [2], dll."
     else:
@@ -232,7 +237,12 @@ Sila jawab soalan di atas berdasarkan sumber rujukan yang disediakan."""
 
 Please answer the question above based on the reference sources provided."""
         if structured:
-            prompt += "\n\nReminder: Return ONLY valid JSON per the required schema."
+            prompt += (
+                "\n\nReminder: Return ONLY valid JSON per the required schema."
+                "\n- Do not put inline [1], [2] markers in the answer text."
+                "\n- Do not write your own parenthetical references like (Quran, ...), and do not guess surah/ayah/hadith IDs."
+                "\n- If you mention a reference (e.g. 'Al-Baqarah 2:256'), copy it exactly from the REFERENCE SOURCES."
+            )
         else:
             prompt += "\nEnsure every fact is accompanied by citations [1], [2], etc."
 

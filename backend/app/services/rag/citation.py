@@ -20,6 +20,42 @@ logger = logging.getLogger(__name__)
 class CitationManager:
     """Manages citation extraction and formatting from LLM responses."""
 
+    def sanitize_answer_text(self, answer_text: str, citations: List[Citation]) -> str:
+        """Remove/normalize hallucinated inline references that contradict citations.
+
+        The UI renders citations separately. We try to prevent the model from
+        emitting misleading parenthetical references like "(Al-Quran, Surah
+        Unknown 2:?)" even when the citation indices are correct.
+        """
+        text = (answer_text or "").strip()
+        if not text:
+            return text
+
+        # Drop parenthetical "Quran" references which are frequently hallucinated.
+        text = re.sub(r"\s*\((?:al-)?qur'?a?n[^)]*\)\s*", " ", text, flags=re.IGNORECASE)
+
+        # If the model wrote "Surah Unknown ..." or "Surah Unknown 2:?", remove the unknown label.
+        # Prefer replacing with the first Quran citation's canonical reference if available.
+        quran_citations = [c for c in citations if isinstance(c, QuranCitation)]
+        if quran_citations:
+            qc = quran_citations[0]
+            ayah_range = (
+                f"{qc.surah_number}:{qc.ayah_start}"
+                if qc.ayah_end in (None, qc.ayah_start)
+                else f"{qc.surah_number}:{qc.ayah_start}-{qc.ayah_end}"
+            )
+            canonical = f"Surah {qc.surah_name} {ayah_range}"
+            text = re.sub(r"Surah\s+Unknown\s+\d+:\?", canonical, text, flags=re.IGNORECASE)
+            text = re.sub(r"Surah\s+Unknown\b", f"Surah {qc.surah_name}", text, flags=re.IGNORECASE)
+
+        # Remove leftover unknown/placeholder verse patterns like "2:?" or "?:?"
+        text = re.sub(r"\b\d+:\?\b", "", text)
+        text = re.sub(r"\b\?:\?\b", "", text)
+
+        # Normalize whitespace.
+        text = re.sub(r"\s{2,}", " ", text).strip()
+        return text
+
     def extract_citations(
         self,
         response: str,
