@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { BookOpen, Bookmark, Copy, Check } from 'lucide-react'
 import ReactMarkdown from 'react-markdown'
-import type { Message, Citation } from '../../types'
+import type { Message } from '../../types'
 import CitationList from '../citation/CitationList'
 
 interface AssistantMessageProps {

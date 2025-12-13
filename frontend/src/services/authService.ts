@@ -1,12 +1,18 @@
 import api from './api'
 import type { Token, LoginCredentials, RegisterData, User } from '../types'
 
+type TokenResponse = {
+  access_token: string
+  token_type: string
+  user: User
+}
+
 export const authService = {
   /**
    * Login user
    */
   async login(credentials: LoginCredentials): Promise<Token> {
-    const response = await api.post<Token>('/auth/login', credentials)
+    const response = await api.post<TokenResponse>('/auth/login', credentials)
     return {
       accessToken: response.data.access_token,
       tokenType: response.data.token_type,
@@ -18,7 +24,7 @@ export const authService = {
    * Register new user
    */
   async register(data: RegisterData): Promise<Token> {
-    const response = await api.post<Token>('/auth/register', {
+    const response = await api.post<TokenResponse>('/auth/register', {
       email: data.email,
       password: data.password,
       display_name: data.displayName,

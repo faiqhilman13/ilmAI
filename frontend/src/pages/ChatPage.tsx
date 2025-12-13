@@ -1,12 +1,9 @@
 import { useState } from 'react'
-import { useTranslation } from 'react-i18next'
-import { MessageCircle, Menu, X } from 'lucide-react'
 import Header from '../components/common/Header'
 import Sidebar from '../components/common/Sidebar'
 import ChatContainer from '../components/chat/ChatContainer'
 
 export default function ChatPage() {
-  const { t } = useTranslation()
   const [sidebarOpen, setSidebarOpen] = useState(false)
 
   return (
