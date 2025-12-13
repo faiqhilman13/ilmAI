@@ -10,7 +10,7 @@ interface MessageListProps {
 
 export default function MessageList({ messages, isLoading }: MessageListProps) {
   return (
-    <div className="max-w-3xl mx-auto px-4 py-6 space-y-6">
+    <>
       {messages.map((message) =>
         message.role === 'user' ? (
           <UserMessage key={message.id} message={message} />
@@ -19,6 +19,6 @@ export default function MessageList({ messages, isLoading }: MessageListProps) {
         )
       )}
       {isLoading && <LoadingMessage />}
-    </div>
+    </>
   )
 }

@@ -1,0 +1,33 @@
+.app-container {
+  display: flex;
+  min-height: 100vh;
+  position: relative;
+  background-color: var(--color-primary-dark);
+}
+
+.main-content {
+  flex: 1;
+  min-height: 100vh;
+  position: relative;
+  z-index: 1;
+}
+
+.content-wrapper {
+  padding: 32px;
+  max-width: 1600px;
+  margin: 0 auto;
+}
+
+/* Mobile */
+@media (max-width: 1024px) {
+  .content-wrapper {
+    padding: 18px;
+  }
+}
+
+@media (max-width: 420px) {
+  .content-wrapper {
+    padding: 14px;
+  }
+}
+

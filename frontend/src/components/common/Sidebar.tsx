@@ -1,93 +1,85 @@
 import { useTranslation } from 'react-i18next'
-import { Plus, MessageCircle, X, Trash2 } from 'lucide-react'
-import { useChatStore } from '../../stores/chatStore'
+import { NavLink } from 'react-router-dom'
+import { Home, MessageSquare, BookOpen, Settings, ChevronLeft, ChevronRight, Sun, Moon, Globe } from 'lucide-react'
 import { useAuthStore } from '../../stores/authStore'
+import { useUIStore } from '../../stores/uiStore'
 
 interface SidebarProps {
   onClose: () => void
+  mobileOpen: boolean
 }
 
-export default function Sidebar({ onClose }: SidebarProps) {
-  const { t } = useTranslation()
-  const { clearMessages, currentConversation } = useChatStore()
-  const { isAuthenticated } = useAuthStore()
+export default function Sidebar({ onClose, mobileOpen }: SidebarProps) {
+  const { t, i18n } = useTranslation()
+  const { user, isAuthenticated } = useAuthStore()
+  const { theme, toggleTheme, sidebarCollapsed, toggleSidebarCollapsed } = useUIStore()
 
-  // Mock conversations for now
-  const conversations = [
-    { id: '1', title: 'Soalan tentang solat', date: 'Hari ini' },
-    { id: '2', title: 'Hukum puasa', date: 'Semalam' },
-    { id: '3', title: 'Zakat fitrah', date: '3 hari lepas' },
-  ]
-
-  const handleNewChat = () => {
-    clearMessages()
-    onClose()
+  const toggleLanguage = () => {
+    const newLang = i18n.language === 'ms' ? 'en' : 'ms'
+    i18n.changeLanguage(newLang)
   }
 
+  const menuItems = [
+    { icon: Home, label: 'Dashboard', path: '/dashboard' },
+    { icon: MessageSquare, label: 'Chat Assistant', path: '/' },
+    { icon: BookOpen, label: 'Knowledge Base', path: '/library' },
+    { icon: Settings, label: 'Settings', path: '/settings' },
+  ] as const
+
   return (
-    <div className="h-full bg-gray-900 text-white flex flex-col">
-      {/* Header */}
-      <div className="p-4 border-b border-gray-700 flex items-center justify-between">
-        <h2 className="font-semibold">{t('chatHistory')}</h2>
-        <button
-          onClick={onClose}
-          className="lg:hidden p-1 hover:bg-gray-700 rounded"
-        >
-          <X className="w-5 h-5" />
-        </button>
-      </div>
-
-      {/* New chat button */}
-      <div className="p-3">
-        <button
-          onClick={handleNewChat}
-          className="w-full flex items-center gap-2 px-4 py-3 bg-gray-800 hover:bg-gray-700 rounded-lg transition-colors"
-        >
-          <Plus className="w-5 h-5" />
-          <span>{t('newChat')}</span>
-        </button>
-      </div>
-
-      {/* Conversations list */}
-      <div className="flex-1 overflow-y-auto px-3">
-        {isAuthenticated ? (
-          <div className="space-y-1">
-            {conversations.map((conv) => (
-              <button
-                key={conv.id}
-                className={`w-full flex items-center gap-3 px-3 py-3 rounded-lg text-left hover:bg-gray-800 transition-colors group ${
-                  currentConversation?.id === conv.id ? 'bg-gray-800' : ''
-                }`}
-              >
-                <MessageCircle className="w-4 h-4 text-gray-400 flex-shrink-0" />
-                <div className="flex-1 min-w-0">
-                  <p className="text-sm truncate">{conv.title}</p>
-                  <p className="text-xs text-gray-500">{conv.date}</p>
-                </div>
-                <button
-                  className="opacity-0 group-hover:opacity-100 p-1 hover:bg-gray-600 rounded"
-                  onClick={(e) => {
-                    e.stopPropagation()
-                    // Handle delete
-                  }}
-                >
-                  <Trash2 className="w-4 h-4 text-gray-400" />
-                </button>
-              </button>
-            ))}
+    <div className={['sidebar glass-panel', sidebarCollapsed ? 'collapsed' : '', mobileOpen ? 'open' : ''].filter(Boolean).join(' ')}>
+      <div className="sidebar-header">
+        {!sidebarCollapsed ? (
+          <div className="logo-container">
+            <div className="logo-icon">I</div>
+            <span className="logo-text">IlmuAI</span>
           </div>
         ) : (
-          <div className="text-center py-8 text-gray-400">
-            <MessageCircle className="w-12 h-12 mx-auto mb-3 opacity-50" />
-            <p className="text-sm">Log masuk untuk menyimpan perbualan</p>
+          <div className="logo-icon" style={{ margin: '0 auto' }}>
+            I
           </div>
         )}
+
+        <button className="collapse-btn" onClick={toggleSidebarCollapsed} type="button" aria-label="Toggle sidebar">
+          {sidebarCollapsed ? <ChevronRight size={20} /> : <ChevronLeft size={20} />}
+        </button>
       </div>
 
-      {/* Footer */}
-      <div className="p-4 border-t border-gray-700 text-center text-xs text-gray-500">
-        <p>IlmuAI v0.1.0</p>
-        <p className="mt-1">Platform Ilmu Islam untuk Muslim Malaysia</p>
+      <nav className="sidebar-nav" onClick={() => mobileOpen && onClose()}>
+        {menuItems.map((item) => (
+          <NavLink
+            key={item.path}
+            to={item.path}
+            className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`}
+            title={sidebarCollapsed ? item.label : undefined}
+          >
+            <item.icon size={22} className="nav-icon" />
+            {!sidebarCollapsed && <span className="nav-label">{item.label}</span>}
+            {item.path === '/' && !sidebarCollapsed && <span className="badge">New</span>}
+          </NavLink>
+        ))}
+      </nav>
+
+      <div className="sidebar-footer">
+        <button className="theme-toggle-btn" onClick={toggleLanguage} type="button" title="Switch Language">
+          <Globe size={20} />
+          {!sidebarCollapsed && <span className="nav-label">{i18n.language === 'ms' ? 'BM' : 'EN'}</span>}
+        </button>
+
+        <button className="theme-toggle-btn" onClick={toggleTheme} type="button" title="Switch Theme">
+          {theme === 'dark' ? <Sun size={20} /> : <Moon size={20} />}
+          {!sidebarCollapsed && <span className="nav-label">{theme === 'dark' ? t('light') : t('dark')}</span>}
+        </button>
+
+        {!sidebarCollapsed && (
+          <div className="user-profile">
+            <div className="avatar">{(user?.displayName || user?.email || 'A')[0]?.toUpperCase()}</div>
+            <div className="user-info">
+              <span className="name">{user?.displayName || (isAuthenticated ? user?.email : 'Guest')}</span>
+              <span className="role">{isAuthenticated ? 'Member' : 'Sign in to save chats'}</span>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   )

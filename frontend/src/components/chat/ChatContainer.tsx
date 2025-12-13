@@ -71,26 +71,25 @@ export default function ChatContainer() {
   }
 
   return (
-    <div className="flex flex-col h-full">
-      {/* Messages area */}
-      <div className="flex-1 overflow-y-auto">
+    <div className="chat-container">
+      <div className="chat-history">
         {messages.length === 0 ? (
-          <div className="h-full flex flex-col items-center justify-center p-4">
-            <div className="max-w-2xl w-full text-center">
-              {/* Welcome message */}
-              <div className="mb-8">
-                <h2 className="text-2xl font-semibold text-gray-900 mb-2">
-                  Assalamualaikum! 👋
-                </h2>
-                <p className="text-gray-600">
+          <div className="message-wrapper assistant" style={{ maxWidth: '100%' }}>
+            <div className="message-avatar" aria-hidden="true">
+              IA
+            </div>
+            <div className="message-content glass-panel" style={{ width: '100%' }}>
+              <div className="message-text">
+                <p style={{ fontWeight: 700 }}>Assalamualaikum! 👋</p>
+                <p>
                   {i18n.language === 'ms'
                     ? 'Saya IlmuAI, pembantu anda untuk soalan tentang Islam. Tanya apa sahaja tentang solat, puasa, zakat, atau hukum-hukum Islam yang lain.'
                     : "I'm IlmuAI, your assistant for questions about Islam. Ask anything about prayer, fasting, zakat, or other Islamic rulings."}
                 </p>
               </div>
-
-              {/* Suggested questions */}
-              <SuggestedQuestions onSelect={handleSuggestedQuestion} />
+              <div style={{ marginTop: 16 }}>
+                <SuggestedQuestions onSelect={handleSuggestedQuestion} />
+              </div>
             </div>
           </div>
         ) : (
@@ -99,23 +98,14 @@ export default function ChatContainer() {
         <div ref={messagesEndRef} />
       </div>
 
-      {/* Error message */}
       {error && (
-        <div className="px-4 py-2 bg-red-50 text-red-600 text-sm text-center">
+        <div style={{ padding: '8px 12px', color: '#fecaca', textAlign: 'center', fontSize: 14 }}>
           {error}
         </div>
       )}
 
-      {/* Input area */}
-      <div className="border-t border-gray-200 bg-white p-4">
-        <div className="max-w-3xl mx-auto">
-          <ChatInput onSend={handleSendMessage} disabled={isLoading} />
-          <p className="text-xs text-gray-400 text-center mt-2">
-            {i18n.language === 'ms'
-              ? 'IlmuAI boleh membuat kesilapan. Sentiasa sahkan dengan sumber yang dipercayai.'
-              : 'IlmuAI can make mistakes. Always verify with trusted sources.'}
-          </p>
-        </div>
+      <div className="input-area glass-panel">
+        <ChatInput onSend={handleSendMessage} disabled={isLoading} />
       </div>
     </div>
   )
