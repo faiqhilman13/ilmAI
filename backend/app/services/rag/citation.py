@@ -20,6 +20,47 @@ logger = logging.getLogger(__name__)
 class CitationManager:
     """Manages citation extraction and formatting from LLM responses."""
 
+    def format_reference_line(self, citations: List[Citation], language: str = "ms") -> str:
+        """Create a deterministic reference line from citation metadata.
+
+        This is used to include clean refs (e.g. "Al-Baqarah 2:256") in the answer
+        without trusting the model to print them correctly.
+        """
+        if not citations:
+            return ""
+
+        parts: list[str] = []
+        for c in citations:
+            if isinstance(c, QuranCitation):
+                ayah_range = (
+                    f"{c.surah_number}:{c.ayah_start}"
+                    if c.ayah_end in (None, c.ayah_start)
+                    else f"{c.surah_number}:{c.ayah_start}-{c.ayah_end}"
+                )
+                parts.append(f"Al-Quran: {c.surah_name} {ayah_range}")
+                continue
+            if isinstance(c, HadithCitation):
+                parts.append(f"Hadith: {c.collection} #{c.hadith_number}")
+                continue
+            if isinstance(c, FatwaCitation):
+                label = f"Fatwa: {c.issuing_authority}"
+                if c.fatwa_number:
+                    label += f" (#{c.fatwa_number})"
+                parts.append(label)
+                continue
+            if isinstance(c, FiqhCitation):
+                label = f"Fiqh: {c.madhab}"
+                if c.topic:
+                    label += f" ({c.topic})"
+                parts.append(label)
+                continue
+
+        if not parts:
+            return ""
+
+        header = "Rujukan" if language == "ms" else "References"
+        return f"{header}: " + "; ".join(parts)
+
     def sanitize_answer_text(self, answer_text: str, citations: List[Citation]) -> str:
         """Remove/normalize hallucinated inline references that contradict citations.
 

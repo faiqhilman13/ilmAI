@@ -198,6 +198,9 @@ class IslamicRAGPipeline:
             available_chunks=chunks,
         )
         answer_text = self.citation_manager.sanitize_answer_text(answer_text, citations)
+        reference_line = self.citation_manager.format_reference_line(citations, language=language)
+        if reference_line:
+            answer_text = f"{answer_text}\n\n{reference_line}"
         citation_indices = [c.index for c in citations]
         if citation_indices:
             cited_lines: List[str] = []
