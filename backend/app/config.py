@@ -1,7 +1,8 @@
 """Application configuration using Pydantic Settings."""
 
 from functools import lru_cache
-from typing import List, Literal
+from pathlib import Path
+from typing import List, Literal, Optional
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -10,7 +11,8 @@ class Settings(BaseSettings):
     """Application settings loaded from environment variables."""
 
     model_config = SettingsConfigDict(
-        env_file=".env",
+        # Always prefer `backend/.env` regardless of CWD (scripts may be run from repo root).
+        env_file=str(Path(__file__).resolve().parents[1] / ".env"),
         env_file_encoding="utf-8",
         case_sensitive=False,
         extra="ignore",
@@ -58,6 +60,18 @@ class Settings(BaseSettings):
     rag_use_source_priors: bool = True
     rag_quran_context_window: int = 1
 
+    # Retrieval telemetry / eval (optional)
+    rag_enable_retrieval_telemetry: bool = False
+    # JSONL append-only log file. If relative, it is resolved from the current working directory.
+    rag_retrieval_telemetry_path: str = "data/eval/retrieval/telemetry.jsonl"
+    # If false, do not store the raw user query in telemetry (still stores IDs/metrics).
+    rag_retrieval_telemetry_include_query: bool = True
+    # Best-effort online eval for explicit refs (e.g. "2:255", "2:255-257", "Hadith #1 Bukhari")
+    # by inferring ground-truth chunk_ids from DB metadata.
+    rag_retrieval_auto_eval_explicit_refs: bool = True
+    # Standard metric cutoffs for telemetry.
+    rag_retrieval_eval_cutoffs: str = "1,3,5,10,20"
+
     # Reranking
     rag_use_cross_encoder_rerank: bool = True
     rag_cross_encoder_model: str = "BAAI/bge-reranker-base"
@@ -83,6 +97,7 @@ class Settings(BaseSettings):
         return [origin.strip() for origin in self.cors_origins.split(",")]
 
 
+@lru_cache(maxsize=1)
 def get_settings() -> Settings:
     """Get cached settings instance."""
     return Settings()

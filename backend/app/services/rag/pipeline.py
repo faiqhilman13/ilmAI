@@ -2,6 +2,8 @@
 
 import json
 import logging
+import time
+import dataclasses
 from typing import List, Optional, AsyncGenerator, TypedDict, Literal
 from uuid import UUID, uuid4
 
@@ -39,6 +41,8 @@ class RAGResult:
         topics: List[str],
         language: str,
         chunks_used: List[RetrievedChunk],
+        retrieval_trace: Optional[dict] = None,
+        retrieval_latency_ms: Optional[float] = None,
     ):
         self.answer = answer
         self.citations = citations
@@ -46,6 +50,8 @@ class RAGResult:
         self.topics = topics
         self.language = language
         self.chunks_used = chunks_used
+        self.retrieval_trace = retrieval_trace
+        self.retrieval_latency_ms = retrieval_latency_ms
 
 
 class IslamicRAGPipeline:
@@ -100,11 +106,22 @@ class IslamicRAGPipeline:
         )
 
         # 2. Retrieve relevant knowledge chunks
-        chunks = await self.retriever.retrieve(
-            query=question,
-            top_k=settings.rag_top_k,
-            score_threshold=settings.rag_score_threshold,
-        )
+        retrieval_trace: Optional[dict] = None
+        retrieval_t0 = time.perf_counter()
+        if settings.rag_enable_retrieval_telemetry:
+            chunks, trace = await self.retriever.retrieve_with_trace(
+                query=question,
+                top_k=settings.rag_top_k,
+                score_threshold=settings.rag_score_threshold,
+            )
+            retrieval_trace = dataclasses.asdict(trace)
+        else:
+            chunks = await self.retriever.retrieve(
+                query=question,
+                top_k=settings.rag_top_k,
+                score_threshold=settings.rag_score_threshold,
+            )
+        retrieval_latency_ms = (time.perf_counter() - retrieval_t0) * 1000.0
         retrieval_lines: List[str] = [f"retrieved_chunks: {len(chunks)}"]
         for i, chunk in enumerate(chunks[:5], 1):
             preview = chunk.text_content.replace("\n", " ")[:140]
@@ -236,6 +253,8 @@ class IslamicRAGPipeline:
             topics=topic_names,
             language=language,
             chunks_used=chunks,
+            retrieval_trace=retrieval_trace,
+            retrieval_latency_ms=retrieval_latency_ms,
         )
 
     async def answer_stream(

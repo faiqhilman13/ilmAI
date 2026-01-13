@@ -10,13 +10,15 @@ from app.config import get_settings
 
 settings = get_settings()
 
-# Create async engine
+# Create async engine with optimized pool settings for concurrent requests
 engine = create_async_engine(
     settings.database_url,
     echo=False,  # Disable SQLAlchemy query logging
     pool_pre_ping=True,
-    pool_size=5,
-    max_overflow=10,
+    pool_size=20,          # Increased from 5 for better concurrency
+    max_overflow=30,       # Increased from 10 to handle burst traffic
+    pool_timeout=30,       # Timeout waiting for connection from pool
+    pool_recycle=1800,     # Recycle connections every 30 minutes
 )
 
 # Session factory

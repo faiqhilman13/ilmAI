@@ -38,6 +38,9 @@ def _load_cross_encoder(model_name: str):
 class CrossEncoderReranker:
     """Rerank retrieved chunks using a cross-encoder model."""
 
+    # Batch size for processing chunks (balance memory vs efficiency)
+    BATCH_SIZE = 32
+
     def __init__(self, model_name: Optional[str] = None):
         self.model_name = model_name or settings.rag_cross_encoder_model
         self._model = None
@@ -58,13 +61,20 @@ class CrossEncoderReranker:
             logger.warning(f"Cross-encoder reranker unavailable: {e}")
             return chunks[:top_k]
 
-        pairs = [(query, c.text_content[:1500]) for c in chunks]
+        # Process in batches for better memory management
+        all_scores = []
 
-        def _predict():
-            return model.predict(pairs)  # type: ignore
+        for i in range(0, len(chunks), self.BATCH_SIZE):
+            batch_chunks = chunks[i:i + self.BATCH_SIZE]
+            pairs = [(query, c.text_content[:1500]) for c in batch_chunks]
 
-        scores = await asyncio.to_thread(_predict)
-        scored = list(zip(chunks, scores))
+            def _predict_batch(p=pairs):
+                return model.predict(p)  # type: ignore
+
+            batch_scores = await asyncio.to_thread(_predict_batch)
+            all_scores.extend(batch_scores)
+
+        scored = list(zip(chunks, all_scores))
         scored.sort(key=lambda x: float(x[1]), reverse=True)
 
         reranked: List[RetrievedChunk] = []

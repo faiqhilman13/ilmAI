@@ -14,6 +14,7 @@ from app.models.knowledge import KnowledgeChunk
 from app.services.llm import get_llm_client
 from app.config import get_settings
 from app.services.rag.logging_utils import format_box
+from app.core.embedding_cache import get_or_compute_embedding
 
 logger = logging.getLogger(__name__)
 settings = get_settings()
@@ -53,6 +54,19 @@ class KnowledgeRetriever:
         fused_score: float = 0.0
         dense_score: float = 0.0
         sparse_score: float = 0.0
+
+    @dataclass
+    class RetrievalTrace:
+        planned_queries: List[str]
+        planned_sources: Optional[List[str]]
+        hard_filters: Dict[str, Any]
+        soft_filters: Dict[str, Any]
+        total_dense: int
+        total_sparse: int
+        dense_candidates: List[Dict[str, Any]]
+        sparse_candidates: List[Dict[str, Any]]
+        fused_candidates: List[Dict[str, Any]]
+        final_top_k: List[Dict[str, Any]]
 
     def __init__(self, db: AsyncSession):
         self.db = db
@@ -226,6 +240,260 @@ class KnowledgeRetriever:
         )
         return fused_chunks
 
+    async def retrieve_with_trace(
+        self,
+        query: str,
+        top_k: int = 10,
+        source_filter: Optional[List[str]] = None,
+        score_threshold: float = 0.3,
+        extra_filters: Optional[Dict[str, Any]] = None,
+    ) -> tuple[List[RetrievedChunk], "KnowledgeRetriever.RetrievalTrace"]:
+        """
+        Like `retrieve()`, but also returns a structured trace of intermediate stages.
+
+        Intended for offline evaluation scripts; it should preserve the same behavior
+        as `retrieve()` for the returned `final_top_k` chunk list.
+        """
+        planned_queries, planned_filters, planned_sources = await self._plan_search(query)
+        effective_filters = {**(extra_filters or {}), **planned_filters}
+        effective_source_filter = source_filter
+        hard_filters = self._extract_hard_filters(effective_filters, query)
+        soft_filters = {
+            k: v for k, v in effective_filters.items() if k not in hard_filters and v is not None
+        }
+
+        direct_chunks = await self._direct_chunks_for_explicit_refs(query, effective_filters, hard_filters)
+        if direct_chunks:
+            fused_chunks = list(direct_chunks)
+            for c in fused_chunks:
+                c.score = 1.0
+
+            if settings.rag_quran_context_window > 0 and self._is_quran_cue(query, effective_filters):
+                fused_chunks = await self._expand_quran_window(
+                    fused_chunks, settings.rag_quran_context_window
+                )
+
+            range_info = self._explicit_quran_range(query, effective_filters)
+            if range_info:
+                surah, start, end = range_info
+                nums = list(range(start, end + 1))
+                forced = await self._fetch_quran_ayahs(surah, nums)
+                forced_ids = {c.id for c in forced}
+                rest = [c for c in fused_chunks if c.id not in forced_ids]
+                fused_chunks = forced + rest
+
+            trace = KnowledgeRetriever.RetrievalTrace(
+                planned_queries=planned_queries,
+                planned_sources=planned_sources,
+                hard_filters=hard_filters,
+                soft_filters=soft_filters,
+                total_dense=0,
+                total_sparse=0,
+                dense_candidates=[],
+                sparse_candidates=[],
+                fused_candidates=[
+                    {
+                        "chunk_id": str(c.id),
+                        "fused_score": 1.0,
+                        "dense_score": 0.0,
+                        "sparse_score": 0.0,
+                        "source_type": c.source_type,
+                    }
+                    for c in fused_chunks
+                ],
+                final_top_k=[
+                    {"chunk_id": str(c.id), "score": float(c.score), "source_type": c.source_type}
+                    for c in fused_chunks
+                ],
+            )
+            return fused_chunks, trace
+
+        dense_k = max(top_k, settings.rag_dense_candidates)
+        sparse_k = max(top_k, settings.rag_sparse_candidates)
+        rrf_k = max(1, settings.rag_rrf_k)
+
+        all_dense: List[RetrievedChunk] = []
+        all_sparse: List[RetrievedChunk] = []
+
+        async def collect_candidates(
+            threshold: float, filters: Optional[Dict[str, Any]]
+        ) -> tuple[
+            Dict[UUID, KnowledgeRetriever._Candidate], int, int, List[RetrievedChunk], List[RetrievedChunk]
+        ]:
+            candidates: Dict[UUID, KnowledgeRetriever._Candidate] = {}
+            total_dense = 0
+            total_sparse = 0
+            dense_flat: List[RetrievedChunk] = []
+            sparse_flat: List[RetrievedChunk] = []
+
+            for q in planned_queries:
+                dense = await self._dense_search(
+                    query=q,
+                    top_k=dense_k,
+                    source_filter=effective_source_filter,
+                    score_threshold=threshold,
+                    extra_filters=filters,
+                )
+                dense_flat.extend(dense)
+                total_dense += len(dense)
+
+                sparse: List[RetrievedChunk] = []
+                if settings.rag_use_hybrid:
+                    sparse = await self._sparse_search(
+                        query=q,
+                        top_k=sparse_k,
+                        source_filter=effective_source_filter,
+                        extra_filters=filters,
+                    )
+                sparse_flat.extend(sparse)
+                total_sparse += len(sparse)
+
+                for rank, chunk in enumerate(dense, start=1):
+                    cand = candidates.get(chunk.id)
+                    if cand is None:
+                        cand = KnowledgeRetriever._Candidate(chunk=chunk)
+                        candidates[chunk.id] = cand
+                    cand.dense_score = max(cand.dense_score, chunk.score)
+                    cand.fused_score += 1.0 / (rrf_k + rank)
+
+                for rank, chunk in enumerate(sparse, start=1):
+                    cand = candidates.get(chunk.id)
+                    if cand is None:
+                        cand = KnowledgeRetriever._Candidate(chunk=chunk)
+                        candidates[chunk.id] = cand
+                    cand.sparse_score = max(cand.sparse_score, chunk.score)
+                    cand.fused_score += 1.0 / (rrf_k + rank)
+
+            return candidates, total_dense, total_sparse, dense_flat, sparse_flat
+
+        candidates, total_dense, total_sparse, dense1, sparse1 = await collect_candidates(
+            score_threshold, hard_filters or None
+        )
+        all_dense.extend(dense1)
+        all_sparse.extend(sparse1)
+        if hard_filters:
+            unfiltered, dense2, sparse2, dense_u, sparse_u = await collect_candidates(
+                score_threshold, None
+            )
+            total_dense += dense2
+            total_sparse += sparse2
+            all_dense.extend(dense_u)
+            all_sparse.extend(sparse_u)
+            for cid, cand2 in unfiltered.items():
+                cand1 = candidates.get(cid)
+                if cand1 is None:
+                    candidates[cid] = cand2
+                else:
+                    cand1.fused_score += cand2.fused_score
+                    cand1.dense_score = max(cand1.dense_score, cand2.dense_score)
+                    cand1.sparse_score = max(cand1.sparse_score, cand2.sparse_score)
+        if not candidates and score_threshold > 0:
+            candidates, total_dense, total_sparse, dense0, sparse0 = await collect_candidates(0.0, None)
+            all_dense = dense0
+            all_sparse = sparse0
+
+        fused = sorted(candidates.values(), key=lambda c: c.fused_score, reverse=True)
+        if settings.rag_use_source_priors:
+            priors = self._source_prior_weights(query, effective_filters)
+            fused = sorted(
+                fused,
+                key=lambda c: c.fused_score * priors.get(c.chunk.source_type, 1.0),
+                reverse=True,
+            )
+
+        apply_per_source = (
+            settings.rag_per_source_k > 0 and self._is_quran_cue(query, effective_filters)
+        )
+        if apply_per_source:
+            per_k = settings.rag_per_source_k
+            allowed_sources = (
+                effective_source_filter
+                if effective_source_filter
+                else ["quran", "hadith", "fiqh", "fatwa"]
+            )
+            selected: List[KnowledgeRetriever._Candidate] = []
+            used: set[UUID] = set()
+            for st in allowed_sources:
+                st_cands = [c for c in fused if c.chunk.source_type == st]
+                for c in st_cands[:per_k]:
+                    if c.chunk.id not in used:
+                        selected.append(c)
+                        used.add(c.chunk.id)
+            for c in fused:
+                if len(selected) >= top_k:
+                    break
+                if c.chunk.id not in used:
+                    selected.append(c)
+                    used.add(c.chunk.id)
+        else:
+            selected = fused[:top_k]
+
+        fused_chunks: List[RetrievedChunk] = []
+        for c in selected[:top_k]:
+            c.chunk.score = c.fused_score
+            fused_chunks.append(c.chunk)
+
+        if settings.rag_quran_context_window > 0 and self._is_quran_cue(query, effective_filters):
+            fused_chunks = await self._expand_quran_window(
+                fused_chunks, settings.rag_quran_context_window
+            )
+
+        range_info = self._explicit_quran_range(query, effective_filters)
+        if range_info:
+            surah, start, end = range_info
+            nums = list(range(start, end + 1))
+            forced = await self._fetch_quran_ayahs(surah, nums)
+            forced_ids = {c.id for c in forced}
+            rest = [c for c in fused_chunks if c.id not in forced_ids]
+            fused_chunks = forced + rest
+
+        def dedupe_in_order(items: List[RetrievedChunk]) -> List[RetrievedChunk]:
+            seen: set[UUID] = set()
+            out: List[RetrievedChunk] = []
+            for c in items:
+                if c.id in seen:
+                    continue
+                out.append(c)
+                seen.add(c.id)
+            return out
+
+        dense_candidates = [
+            {"chunk_id": str(c.id), "score": float(c.score), "source_type": c.source_type}
+            for c in dedupe_in_order(all_dense)
+        ]
+        sparse_candidates = [
+            {"chunk_id": str(c.id), "score": float(c.score), "source_type": c.source_type}
+            for c in dedupe_in_order(all_sparse)
+        ]
+        fused_candidates = [
+            {
+                "chunk_id": str(c.chunk.id),
+                "fused_score": float(c.fused_score),
+                "dense_score": float(c.dense_score),
+                "sparse_score": float(c.sparse_score),
+                "source_type": c.chunk.source_type,
+            }
+            for c in fused
+        ]
+        final_top_k = [
+            {"chunk_id": str(c.id), "score": float(c.score), "source_type": c.source_type}
+            for c in fused_chunks
+        ]
+
+        trace = KnowledgeRetriever.RetrievalTrace(
+            planned_queries=planned_queries,
+            planned_sources=planned_sources,
+            hard_filters=hard_filters,
+            soft_filters=soft_filters,
+            total_dense=total_dense,
+            total_sparse=total_sparse,
+            dense_candidates=dense_candidates,
+            sparse_candidates=sparse_candidates,
+            fused_candidates=fused_candidates,
+            final_top_k=final_top_k,
+        )
+        return fused_chunks, trace
+
     async def _dense_search(
         self,
         query: str,
@@ -234,7 +502,12 @@ class KnowledgeRetriever:
         score_threshold: float,
         extra_filters: Optional[Dict[str, Any]] = None,
     ) -> List[RetrievedChunk]:
-        query_embedding = await self.llm_client.generate_embedding(query)
+        # Use cached embedding if available
+        query_embedding = await get_or_compute_embedding(
+            text=query,
+            compute_fn=self.llm_client.generate_embedding,
+            model=settings.openai_embedding_model,
+        )
         embedding_literal = self._format_embedding(query_embedding)
 
         sql = f"""
@@ -437,16 +710,24 @@ Rules:
                 filters["ayah_end"] = int(m.group(3))
 
         collections = {
-            "bukhari": ["bukhari", "bukharī", "البخاري"],
-            "muslim": ["muslim", "مسلم"],
-            "abudawud": ["abu dawud", "abudawud", "أبو داود"],
+            "bukhari": ["bukhari", "sahih bukhari", "bukharī", "البخاري"],
+            "muslim": ["muslim", "sahih muslim", "مسلم"],
+            "abudawud": ["abu dawud", "abu daud", "abudawud", "أبو داود"],
             "tirmidhi": ["tirmidhi", "ترمذي"],
-            "nasai": ["nasai", "nasa'i", "النسائي"],
-            "ibnmajah": ["ibn majah", "ابن ماجه"],
+            "nasai": ["nasai", "nasa'i", "nasa i", "النسائي"],
+            "ibnmajah": ["ibn majah", "ibn-majah", "ibnmajah", "ابن ماجه"],
         }
         ql = query.lower()
+        ql_compact = re.sub(r"[\s\-\u2010-\u2015_]+", "", ql)
         for key, variants in collections.items():
+            if key in ql or key in ql_compact:
+                filters["collection"] = key
+                break
             if any(v in ql for v in variants):
+                filters["collection"] = key
+                break
+            variants_compact = [re.sub(r"[\s\-\u2010-\u2015_]+", "", v.lower()) for v in variants]
+            if any(v and v in ql_compact for v in variants_compact):
                 filters["collection"] = key
                 break
 
@@ -641,6 +922,70 @@ Rules:
             )
             for row in rows
         ]
+
+    async def _fetch_hadith_by_ref(
+        self, collection: str, hadith_number: str
+    ) -> List[RetrievedChunk]:
+        sql = """
+            SELECT
+                id,
+                source_type,
+                text_content,
+                text_arabic,
+                text_translation,
+                chunk_metadata as metadata
+            FROM knowledge_chunks
+            WHERE source_type = 'hadith'
+              AND lower(chunk_metadata->>'collection') = :collection
+              AND chunk_metadata->>'hadith_number' = :hadith_number
+            LIMIT 1
+        """
+        params = {"collection": str(collection).lower(), "hadith_number": str(hadith_number)}
+        result = await self.db.execute(text(sql), params)
+        row = result.first()
+        if not row:
+            return []
+        return [
+            RetrievedChunk(
+                id=row.id,
+                source_type=row.source_type,
+                text_content=row.text_content,
+                text_arabic=row.text_arabic,
+                text_translation=row.text_translation,
+                metadata=row.metadata or {},
+                score=0.0,
+            )
+        ]
+
+    async def _direct_chunks_for_explicit_refs(
+        self,
+        query: str,
+        effective_filters: Dict[str, Any],
+        hard_filters: Dict[str, Any],
+    ) -> List[RetrievedChunk]:
+        """
+        Best-effort short-circuit for explicit refs.
+
+        This avoids expensive embedding generation for reference queries where we can
+        fetch the exact chunk(s) via metadata.
+        """
+        range_info = self._explicit_quran_range(query, effective_filters)
+        if range_info:
+            surah, start, end = range_info
+            nums = list(range(start, end + 1))
+            return await self._fetch_quran_ayahs(surah, nums)
+
+        if "surah_number" in hard_filters and "ayah_number" in hard_filters:
+            surah = int(hard_filters["surah_number"])
+            ayah = int(hard_filters["ayah_number"])
+            return await self._fetch_quran_ayahs(surah, [ayah])
+
+        if "collection" in hard_filters and "hadith_number" in hard_filters:
+            return await self._fetch_hadith_by_ref(
+                str(hard_filters["collection"]), str(hard_filters["hadith_number"])
+            )
+
+        return []
 
     def _apply_extra_filters(
         self, sql: str, params: Dict[str, Any], filters: Dict[str, Any]

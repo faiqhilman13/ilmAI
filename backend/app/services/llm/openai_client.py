@@ -9,6 +9,7 @@ from tenacity import retry, stop_after_attempt, wait_exponential
 
 from app.services.llm.base import BaseLLMClient
 from app.core.exceptions import LLMError
+from app.core.circuit_breaker import openai_circuit
 
 logger = logging.getLogger(__name__)
 
@@ -57,7 +58,7 @@ class OpenAIClient(BaseLLMClient):
         max_tokens: int = 2000,
     ) -> str:
         """Generate a response from OpenAI."""
-        try:
+        async def _do_generate() -> str:
             messages = [
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": user_prompt},
@@ -72,6 +73,8 @@ class OpenAIClient(BaseLLMClient):
 
             return response.choices[0].message.content or ""
 
+        try:
+            return await openai_circuit.call(_do_generate)
         except Exception as e:
             logger.error(f"OpenAI generation error: {e}")
             raise LLMError(f"OpenAI API error: {str(e)}")
@@ -109,13 +112,15 @@ class OpenAIClient(BaseLLMClient):
     @retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=1, max=10))
     async def generate_embedding(self, text: str) -> List[float]:
         """Generate embedding for a single text."""
-        try:
+        async def _do_embedding() -> List[float]:
             response = await self.client.embeddings.create(
                 model=self.embedding_model,
                 input=text,
             )
             return response.data[0].embedding
 
+        try:
+            return await openai_circuit.call(_do_embedding)
         except Exception as e:
             logger.error(f"OpenAI embedding error: {e}")
             raise LLMError(f"OpenAI embedding error: {str(e)}")
@@ -123,13 +128,15 @@ class OpenAIClient(BaseLLMClient):
     @retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=1, max=10))
     async def generate_embeddings_batch(self, texts: List[str]) -> List[List[float]]:
         """Generate embeddings for multiple texts."""
-        try:
+        async def _do_batch_embedding() -> List[List[float]]:
             response = await self.client.embeddings.create(
                 model=self.embedding_model,
                 input=texts,
             )
             return [item.embedding for item in response.data]
 
+        try:
+            return await openai_circuit.call(_do_batch_embedding)
         except Exception as e:
             logger.error(f"OpenAI batch embedding error: {e}")
             raise LLMError(f"OpenAI embedding error: {str(e)}")
